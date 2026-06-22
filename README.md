@@ -5,6 +5,12 @@ fan and a 6-month seasonal outlook — built entirely on free,
 commercially-licensed open data.**
 
 <p align="center">
+  <img src="docs/img/scrubber.gif" width="820"
+       alt="The forecast-timeline scrubber: every monitored borehole recoloured below / near / above normal as the forecast advances from today to six months ahead.">
+</p>
+<p align="center"><em>Press play and watch the forecast evolve — today → 6 months ahead, every monitored borehole.</em></p>
+
+<p align="center">
   <img src="docs/img/dataflow.png" width="820"
        alt="Data flow: ECMWF Open Data, EA Hydrology and Copernicus CDS (ERA5 + SEAS5) feed calibrated per-borehole Pastas models, producing a daily 15-day probabilistic fan and a 6-month seasonal outlook, published as a per-borehole artifact pack and a MapLibre explorer.">
 </p>
