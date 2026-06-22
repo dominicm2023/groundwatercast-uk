@@ -1,0 +1,20 @@
+{
+  "dataset_name": "Countries (December 2024) Boundaries UK BUC (Ultra Generalised, 500m)",
+  "source_url": "https://services1.arcgis.com/ESMARspQHYMw9BZ9/ArcGIS/rest/services/Countries_December_2024_Boundaries_UK_BUC/FeatureServer/0",
+  "portal_url": "https://geoportal.statistics.gov.uk/",
+  "attribution": "Source: Office for National Statistics licensed under the Open Government Licence v.3.0. Contains OS data © Crown copyright and database right 2024.",
+  "licence": "OGL v3.0",
+  "fetch_date_utc": "2026-06-11T05:52:22Z",
+  "query": "CTRY24NM IN ('England','Wales')",
+  "features_merged": 2,
+  "features_note": "England and Wales are kept as SEPARATE features (properties.name = 'England' / 'Wales') so consumers can do per-nation point-in-polygon splits. src.catalogue.build.load_region_geometry unions all features, so the file also works directly as a single England+Wales coverage filter.",
+  "simplification_tolerance_deg": null,
+  "simplification_note": "No local simplification applied — the ONS BUC product is already ultra-generalised to 500 m, which is ample for a station coverage filter (this is not cartography).",
+  "crs": "EPSG:4326",
+  "geom_type": "MultiPolygon (per feature)",
+  "file_size_kb": 155.9,
+  "contains_buffer_deg": 0.15,
+  "contains_buffer_note": "Point-in-region tests in src.catalogue.build apply REGION_CONTAINS_BUFFER_DEG (+0.15 deg, ~15 km) to the polygon. For a national boundary this pulls in a fringe of stations just over the Scottish border and slightly offshore; acceptable for a coverage spike, revisit before production.",
+  "boundary_type": "national_countries",
+  "boundary_type_note": "England + Wales national outlines, used by scripts/national_catalogue_dryrun.py to exercise the catalogue machinery at national scale. The EA Hydrology API covers England (plus some NRW stations); Scotland and Northern Ireland are excluded."
+}

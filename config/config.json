@@ -1,0 +1,179 @@
+{
+  "api": {
+    "stations_url": "https://environment.data.gov.uk/hydrology/id/stations.csv",
+    "stations_limit": 20000,
+    "readings_url_template": "https://environment.data.gov.uk/hydrology/id/measures/{measure_id}/readings.csv"
+  },
+  "catalogue": {
+    "boundary_path": "data/regions/england_wales.geojson",
+    "output_path": "data/processed/catalogue.csv",
+    "classification_mode": "fast"
+  },
+  "region": {
+    "name": "England",
+    "geojson_path": "data/regions/england_wales.geojson"
+  },
+  "regional": {
+    "lon_split": -2.0
+  },
+  "diagnostics": {
+    "trend_screen": {
+      "enabled": true,
+      "min_years": 3.0,
+      "min_obs": 730,
+      "slope_min_m_per_yr": 0.10,
+      "r2_min": 0.50,
+      "drift_ratio_min": 1.0,
+      "change_min_m": 0.15,
+      "change_med_m": 0.5,
+      "change_high_m": 2.0,
+      "step_threshold_m": 0.30,
+      "step_rel_k": 4.0,
+      "step_min_count": 1,
+      "rain_corr_min": 0.35,
+      "emit_min_severity": "low",
+      "public_provenance": ["artifact_like"],
+      "output_path": "outputs/trend_flags.csv",
+      "history_path": "outputs/trend_flags_history.parquet",
+      "neighbour": {
+        "radius_km": 15.0,
+        "min_overlap_years": 3.0,
+        "min_neighbours": 2,
+        "require_same_aquifer_class": false,
+        "isolation_slope_ratio": 3.0,
+        "_comment": "aquifer_name/aquifer_designation are 3-value productivity classes (Principal/Secondary/Low), NOT formations, so distance is the primary geological proxy; aquifer_class concordance is reported but not required."
+      }
+    },
+    "abstraction_screen": {
+      "enabled": false,
+      "_status": "EXPERIMENTAL — disabled. The seasonal-amplitude-vs-neighbours metric is validated on synthetic series (tests/test_abstraction_screen.py), but on the real fleet it over-flags natural high-amplitude Chalk (575 evaluated → 125 flagged at 25 km / 51 at 6 km), because the 3-value aquifer class can't separate downland Chalk from valley/confined Chalk. Needs a depth-to-water / hydrogeological-domain covariate, or the EA abstraction-licence ingest, before it is trustworthy. See docs/abstraction_screen_design.md.",
+      "min_years": 3.0,
+      "min_obs": 730,
+      "min_amp_m": 0.3,
+      "amp_ratio_min": 2.5,
+      "amp_ratio_med": 3.0,
+      "amp_ratio_high": 4.0,
+      "emit_min_severity": "low",
+      "output_path": "outputs/abstraction_flags.csv",
+      "history_path": "outputs/abstraction_flags_history.parquet",
+      "neighbour": {
+        "radius_km": 25.0,
+        "min_neighbours": 2,
+        "require_same_aquifer_class": true,
+        "_comment": "Advisory screen for the CYCLIC abstraction case the trend screen misses: a borehole whose seasonal drawdown amplitude greatly exceeds its SAME-aquifer-class neighbours' is a candidate for a local-abstraction metadata check. Same-aquifer comparison controls for Chalk swinging more than Sandstone; distance is still the primary proxy. Report-only — never auto-excludes; a human confirms and adds an abstraction_influenced entry to known_bad_stations.yaml by hand."
+      }
+    }
+  },
+  "linking": {
+    "output_path": "data/processed/station_links.csv",
+    "rainfall_preference": {
+      "preferred_period": 86400,
+      "fallback": "lowest_period"
+    }
+  },
+  "download": {
+    "min_date": "2018-01-01",
+    "limit": 200000,
+    "max_retries": 3,
+    "backoff_base": 2,
+    "raw_root": "data/raw",
+    "manifest_path": "data/raw/manifest.json",
+    "chunk_years": 2
+  },
+  "features": {
+    "output_path": "data/features/timeseries_features.csv",
+    "joined_path": "data/features/joined_timeseries.csv",
+    "cleaning": {
+      "groundwater_iqr_fence": 20.0,
+      "groundwater_min_daily_std": 0.1
+    },
+    "weibull": {
+      "enabled": true,
+      "k": 1.8,
+      "lambda": 10.0,
+      "lag_days": 45
+    },
+    "weibull_multi": {
+      "enabled": false,
+      "kernels": {
+        "east": {
+          "k": 1.3,
+          "lambda": 10.0,
+          "lag_days": 30
+        },
+        "west": {
+          "k": 1.0,
+          "lambda": 10.0,
+          "lag_days": 30
+        }
+      },
+      "add_masked": true,
+      "add_pooled": false
+    },
+    "weibull_by_group": {
+      "enabled": false,
+      "east": {
+        "k": 1.3,
+        "lambda": 10.0,
+        "lag_days": 30
+      },
+      "west": {
+        "k": 1.0,
+        "lambda": 10.0,
+        "lag_days": 30
+      }
+    }
+  },
+  "measure_units": {
+    "groundwater": "mAOD",
+    "rainfall": "mm"
+  },
+  "forecast": {
+    "ensemble": {
+      "provider": "ecmwf_opendata",
+      "horizon_days": 14,
+      "extended": {
+        "enabled": false,
+        "provider": "open_meteo_ec46",
+        "horizon_days": 46,
+        "splice_day": 15,
+        "operational_window_days": 14
+      },
+      "raw_cache_root": "data/raw/ensemble",
+      "gw_roll_method": "reduced_form_ar",
+      "bias_correction": "mean_ratio",
+      "dev_provider": "open_meteo",
+      "pastas": {
+        "enabled": true,
+        "rfunc": "Gamma",
+        "recharge": "FlexModel",
+        "models_cache": "data/model/pastas_models.json",
+        "members_cache": "data/model/forecast_pastas_members.parquet",
+        "summary_cache": "data/model/forecast_pastas_summary.csv",
+        "fan_cache": "data/model/forecast_pastas_fan.csv",
+        "archive_cache": "data/model/forecast_pastas_archive.parquet",
+        "fan_archive_cache": "data/model/forecast_pastas_fan_archive.parquet",
+        "mc_samples": 4000,
+        "scope": "fleet"
+      }
+    },
+    "seasonal": {
+      "enabled": true,
+      "months": 6,
+      "trace_start_year": 2008,
+      "seas5_weighting": true,
+      "weight_months": 3,
+      "band_mode": "additive",
+      "summary_cache": "data/model/forecast_seasonal_summary.csv",
+      "archive_cache": "data/model/forecast_seasonal_archive.parquet",
+      "normals_cache": "data/model/gw_monthly_normals.csv"
+    }
+  },
+  "publish": {
+    "out_dir": "outputs/pack",
+    "history_days": 1100,
+    "include_history_for": "all",
+    "pretty": false
+  },
+  "modules": {}
+}

@@ -1,0 +1,53 @@
+MIT License
+
+Copyright (c) 2026 GroundwaterCast UK contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+----
+
+Note on third-party data:
+
+The codebase consumes several public datasets, each with its own licence.
+Bulk observational data is fetched by the pipeline at run time and is not
+redistributed in this repository; two small derived boundary/geology files
+are committed with provenance notes (see their .source.json files). Use of
+all sources is governed by their own terms:
+
+  - EA Hydrology API readings              — Open Government Licence v3.0
+  - EA Flood-Monitoring API                — Open Government Licence v3.0
+  - EA Aquifer Designation (Bedrock)       — Open Government Licence v3.0
+    (committed: data/geology/aquifer_bedrock.geojson, OGL v3.0,
+     contains Environment Agency information © Environment Agency and/or
+     database right)
+  - ONS Countries (December 2024) Boundaries UK BUC
+    (committed: data/regions/england_wales.geojson, OGL v3.0,
+     Source: Office for National Statistics licensed under the Open
+     Government Licence v3.0; contains OS data © Crown copyright and
+     database right 2024)
+  - ECMWF Open Data (ENS forecasts)        — CC BY 4.0, © ECMWF
+  - Open-Meteo API (forecast + ERA5 archive transport)
+                                           — free tier: non-commercial use
+     only (CC BY-NC 4.0); commercial use requires an Open-Meteo API
+     subscription (set GWC_OPEN_METEO_API_KEY). ERA5 data © ECMWF /
+     Copernicus Climate Change Service.
+
+GroundwaterCast UK is an independent open-source project. It is not
+affiliated with, or endorsed by, the Environment Agency, the Office for
+National Statistics, ECMWF, Open-Meteo, or any water company.

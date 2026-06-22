@@ -1,0 +1,12 @@
+{
+  "name": "bedrock_625k.geojson",
+  "description": "National bedrock-geology context layer for the explorer, classified to an indicative aquifer potential (Principal / Secondary / Low) from rock composition.",
+  "source_dataset": "BGS Geology 625k (DiGMapGB-625) Bedrock, version 5",
+  "source_provider": "British Geological Survey",
+  "scale": "1:625,000",
+  "coverage": "United Kingdom (England, Wales, Scotland, Isle of Man, Northern Ireland)",
+  "licence": "Open Government Licence v3.0 (free, commercial use permitted)",
+  "attribution": "Contains British Geological Survey materials © UKRI [year]. Open Government Licence v3.0.",
+  "derivation": "scripts/build_bedrock_geology.py — lithology (RCS_D) keyword classification → dissolve by class → simplify (250 m) → reproject EPSG:27700 → WGS84.",
+  "note": "Indicative aquifer potential derived from rock type — NOT the official EA/BGS Aquifer Designation (which is not OGL/commercial-clean and was retired from this product)."
+}

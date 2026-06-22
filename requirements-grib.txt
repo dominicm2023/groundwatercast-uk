@@ -1,0 +1,23 @@
+# Optional extras for the ecmwf_opendata GRIB ENS provider — W1+ of
+# docs/free_data_migration.md (the free, commercial-clean ECMWF Open Data
+# path).
+#
+#     pip install -r requirements-grib.txt --only-binary eccodes
+#
+# eccodes ships binary wheels (incl. Windows) since 2.37.0. GOTCHA: the
+# Windows wheels track specific CPythons (cp313 is the newest as of Jun
+# 2026) — on a newer interpreter pip serves the universal wheel, which
+# imports but raises "Cannot find the ecCodes library" at runtime. In that
+# case install into a small side-venv on the newest wheeled CPython
+# (mirrors .venv-pastas):
+#
+#     py -3.13 -m venv .venv-grib
+#     .venv-grib\Scripts\python -m pip install -r requirements-grib.txt `
+#         pandas requests pyarrow --only-binary eccodes
+#     .venv-grib\Scripts\python -m cfgrib selfcheck
+#
+# (Linux deploys are unaffected — manylinux wheels cover current CPythons.)
+ecmwf-opendata
+cfgrib
+eccodes>=2.37.0
+xarray

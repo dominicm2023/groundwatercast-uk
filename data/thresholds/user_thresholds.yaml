@@ -1,0 +1,49 @@
+# Per-borehole breach thresholds.
+#
+# NATIONAL DEMO boreholes (added 2026-06): indicative P90-proxy levels (NOT
+# operational thresholds) so the cross-UK set is pinned into the forecast scope
+# for the screen-share demo. Safe to remove this block to drop them.
+#
+# See src/forecast/ensemble/thresholds.py for the schema + resolution order.
+
+thresholds:
+  - station_id: "72a62131-cf35-4f65-b5f7-a9fb3d043612"
+    mAOD: 55.475
+    label: "Whitworth Hall (demo)"
+    source: "Indicative P90 proxy - national demo borehole"
+  - station_id: "d04793b3-7159-4ea4-aabb-bfaa1f0fb8dd"
+    mAOD: 53.094
+    label: "Scripton Bridge (demo)"
+    source: "Indicative P90 proxy - national demo borehole"
+  - station_id: "6d84a07a-5afe-44a6-828e-6f07321a4a96"
+    mAOD: 34.4
+    label: "Cold Hill Farm (demo)"
+    source: "Indicative P90 proxy - national demo borehole"
+  - station_id: "d069a6a2-06fe-407d-95ed-7e5eb09bcf35"
+    mAOD: 44.411
+    label: "Bircham Newton (demo)"
+    source: "Indicative P90 proxy - national demo borehole"
+  - station_id: "625cc8af-8502-43b7-a447-41d2f0965e35"
+    mAOD: 16.191
+    label: "Station Farm (demo)"
+    source: "Indicative P90 proxy - national demo borehole"
+  - station_id: "10827523-4cf1-4150-a344-cb4ebfd98598"
+    mAOD: 66.52
+    label: "Hadnall (demo)"
+    source: "Indicative P90 proxy - national demo borehole"
+  - station_id: "7b8dee44-4fc6-4218-96b5-f9b966335190"
+    mAOD: 68.3
+    label: "Painsbrook (demo)"
+    source: "Indicative P90 proxy - national demo borehole"
+  - station_id: "501e35a8-366e-4d66-b9fa-139c7317f11b"
+    mAOD: 29.871
+    label: "Northlands (demo)"
+    source: "Indicative P90 proxy - national demo borehole"
+  - station_id: "e86aeae5-ba1f-4ab1-89e1-39e023ff3210"
+    mAOD: 22.908
+    label: "Cherry Burton (demo)"
+    source: "Indicative P90 proxy - national demo borehole"
+  - station_id: "0723143f-2b07-4d02-9d89-c23087a2e84a"
+    mAOD: 16.068
+    label: "Liverpool North (demo)"
+    source: "Indicative P90 proxy - national demo borehole"

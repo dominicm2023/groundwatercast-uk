@@ -1,0 +1,12 @@
+# Dedicated venv for the Pastas TFN groundwater forecast (CLAUDE.md steps 8f-8h).
+# Kept OUT of the main GW-pipeline environment: pastas pulls numba/llvmlite and
+# specific numpy/scipy versions, and the main pipeline must never import pastas.
+# Set up once (persist it — do not rely on a temp dir):
+#   python -m venv .venv-pastas
+#   .venv-pastas\Scripts\python -m pip install -r requirements-pastas.txt
+#
+# Verified on Python 3.14 (cp314 wheels — no compiler needed).
+pastas>=1.14        # brings numpy / scipy / pandas / matplotlib / numba / llvmlite
+pyarrow>=15         # parquet cache I/O
+pyyaml>=6           # IRP YAML trigger-borehole lookup (thresholds.py)
+pytest>=8           # tests/test_pastas_*.py (run with this interpreter)

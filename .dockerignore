@@ -1,0 +1,73 @@
+# Mirrors .gitignore for the heavyweight, regenerable paths so the Docker
+# build context stays at code-size (~MBs) instead of ~14 GB. Everything
+# excluded here lives on the runtime volumes (docker-compose.yml) or is
+# rebuilt by the pipeline. Small committed assets under data/ and outputs/
+# arrive via the ./data and ./outputs bind mounts of the repo checkout.
+
+# VCS / tooling
+.git
+.claude
+.claudeignore
+.vscode
+.idea
+
+# Secrets — must never reach the image
+.env
+.env.*
+**/*.pem
+**/*.key
+**/*.token
+.netrc
+.streamlit/secrets.toml
+
+# Python ephemera / local envs
+# (.dockerignore patterns anchor at the context root, unlike .gitignore —
+#  the **/ prefix is what makes these match in subdirectories too)
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
+**/.pytest_cache
+**/.ipynb_checkpoints
+.venv
+.venv-pastas
+venv
+env
+build
+dist
+
+# Large raw downloads (re-fetchable from EA / CEDA / SW)
+data/raw
+
+# Large derived artefacts (rebuilt by the pipeline; live on the data volume)
+data/features
+data/model
+models
+data/processed/phase_e_panel_daily.csv
+data/processed/phase_e_test_predictions.csv
+data/processed/phase_r_panel.csv
+data/processed/phase_r_baseline_predictions.csv
+data/processed/sw_flow_daily_2021_2025.csv
+data/processed/rsw_2026_spill_days_pilot.csv
+
+# Large external snapshots (re-fetchable)
+data/external/haduk
+data/external/sw_spills/spill_events.csv
+data/external/sw_spills/spill_events_raw.json
+data/external/sw_spills/raw
+data/external/edm/_unpacked
+data/external/edm/*.zip
+
+# Outputs / scratch
+outputs
+presentations
+notebooks/scratch
+**/debug_*.html
+**/debug_*.csv
+**/*.log
+**/*.tmp
+**/*.bak
+
+# Docker files themselves (not needed inside the image)
+Dockerfile
+docker-compose.yml
+.dockerignore

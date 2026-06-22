@@ -1,0 +1,77 @@
+# Known-bad station register
+# ===========================
+#
+# Manually curated list of EA hydrology stations whose recent readings
+# cannot be safely compared against historically-derived thresholds —
+# typically because EA changed the sensor datum, recalibrated the
+# instrument, or otherwise broke the time-series continuity.
+#
+# Stations listed here are:
+#   - Filtered out of the dedup-candidate representative selection
+#     (the cluster's next-best non-excluded variant becomes the
+#      representative; if none, the cluster is dropped entirely)
+#   - Excluded from downstream candidate scoring and forecasting
+#   - Annotated with the exclusion reason in catalogue exports
+#
+# This is a Piece A patch. A longer-term Piece C would auto-detect
+# scaling shifts in the GW history and either re-derive thresholds on
+# the post-shift data or split the series at the break-point. Until
+# then, suspect stations are listed here by hand.
+#
+# When adding an entry:
+#   1. Re-run any affected catalogue / candidate outputs after the
+#      exclusion takes effect.
+#   2. Note the diagnostic that led to the exclusion (rolling-window
+#      level shift > N σ, datum change confirmed with the data provider,
+#      etc.) in `notes` so future maintainers can audit.
+#
+# Schema:
+#   - station_id     EA station UUID (matches data/processed/catalogue.csv)
+#   - station_name   for human reference
+#   - excluded_from  ISO date — readings from this date are untrustworthy.
+#                    Optional; if omitted, the station is excluded entirely.
+#   - reason         short tag — "scaling_change" | "datum_shift" |
+#                    "sensor_fault" | "decommissioned" |
+#                    "abstraction_influenced" | "other"
+#                    ("abstraction_influenced": a heavily-pumped site whose level
+#                     tracks a pump schedule, not recharge — flagged advisory by
+#                     scripts/build_abstraction_screen.py, confirmed by a human.
+#                     See docs/abstraction_screen_design.md.)
+#   - notes          free-form explanation + diagnostic evidence
+
+stations:
+  - station_id: fc86269b-6476-4896-8826-60c2e05f3eaa
+    station_name: Graylingwell
+    excluded_from: 2025-10-01
+    reason: scaling_change
+    notes: >-
+      EA observably re-scaled this sensor in October 2025. Monthly mean
+      GW level shifted from 16.84 mAOD (Sep 2025) → 18.24 mAOD (Oct
+      2025, partial) → 20.39 mAOD (Nov 2025) → 21.27 mAOD (Dec 2025+,
+      flat ±0.3 m). The neighbouring Graylingwell Farm (6e0185e7…)
+      sat at ~13–14 mAOD across the same period — there is no
+      hydrogeologically plausible mechanism for a 4.5 m jump at one
+      station while the immediate neighbour stayed put. Any thresholds
+      derived from this BH's pre-shift data are no longer comparable to
+      post-shift readings, so it is excluded. After exclusion, fallback
+      looks further down the candidate list for a fresh non-excluded
+      BH; if none, the band reverts to grey with a clearer "no
+      trustworthy fresh evidence" message.
+  - station_id: 1f75687f-6590-4dfd-aa55-2cba00dae420
+    station_name: Moor Hall
+    reason: other
+    notes: >-
+      Anomalous, near-perfectly-linear rise of ~0.70 m/yr (R²=0.99) across the
+      whole 2018–2026 record (29.4 → 35.0 mAOD, +5.6 m), only one >0.3 m daily
+      step. Two nearby boreholes on the SAME Permo-Triassic Sherwood Sandstone
+      are flat over the identical period — Liverpool North (8.8 km, +0.013 m/yr)
+      and Yew Tree Farm (6.9 km) — so this is NOT regional groundwater rebound;
+      the rise is isolated to this borehole. Cause unconfirmed: slow
+      transducer/datum drift is most likely given the linear isolation, but a
+      very local abstraction-recovery effect can't be excluded without
+      well-construction / datum-survey / nearby-abstraction metadata. Either
+      way the non-stationary trend breaks the rainfall-driven Pastas forecast
+      (it mean-reverts) and skews the normals/threshold, so the series isn't
+      safely comparable. Swapped out of the national demo for Liverpool North.
+      A trend screen (flag large multi-yr slope / high linear R²) would
+      auto-detect this — see docs/trend_screen plan.

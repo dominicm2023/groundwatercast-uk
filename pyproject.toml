@@ -1,0 +1,13 @@
+# Metadata + tooling configuration ONLY.
+#
+# This repo is clone-and-run: there is deliberately no [build-system] table
+# and `src/` is not an installed package. Tests and scripts import `src.*`
+# relative to the repo root (run everything from the root with `python -m`).
+
+[project]
+name = "groundwatercast"
+version = "0.1.0"
+description = "GroundwaterCast UK — daily 14-day probabilistic groundwater forecasts and a daily risk index for UK boreholes, built entirely on open data (EA hydrology APIs, ECMWF ensemble, Pastas TFN recharge). Streamlit dashboard."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.13"

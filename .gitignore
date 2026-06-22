@@ -1,0 +1,89 @@
+# =====================================================================
+# Secrets — must never be committed
+# =====================================================================
+.env
+.env.*
+*.pem
+*.key
+*.token
+.netrc
+.streamlit/secrets.toml
+
+# =====================================================================
+# Python
+# =====================================================================
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+.venv/
+.venv-pastas/
+venv/
+env/
+build/
+dist/
+
+# =====================================================================
+# OS / IDE
+# =====================================================================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# =====================================================================
+# Claude Code session state (project-local)
+# =====================================================================
+.claude/
+
+# =====================================================================
+# Large raw downloads (re-fetchable from the EA APIs / providers)
+# =====================================================================
+data/raw/
+
+# =====================================================================
+# Large derived outputs (rebuildable via the pipeline)
+# =====================================================================
+data/features/
+data/processed/
+data/model/
+models/
+outputs/
+
+# ---------------------------------------------------------------------
+# ...except the committed inputs that live alongside derived outputs
+# ---------------------------------------------------------------------
+!data/regions/
+!data/geology/
+!data/external/
+!data/thresholds/
+
+# Bulky geology SOURCE downloads (the committed bedrock_625k.geojson is
+# derived from these by scripts/build_bedrock_geology.py — keep the source
+# out of git: BGS 625k GeoPackage ~43 MB, zip ~16 MB).
+data/geology_src/
+data/*.zip
+# Retired EA/BGS licensed Aquifer Designation layer (not OGL — replaced by
+# the OGL BGS 625k layer). Kept locally for the legacy catalogue enrichment.
+data/geology/aquifer_bedrock.geojson
+data/geology/aquifer_bedrock.source.json
+
+# =====================================================================
+# Runtime ephemera (locks, logs, manifests written by refresh scripts)
+# =====================================================================
+*.log
+*.tmp
+*.bak
+debug_*.html
+debug_*.csv
+notebooks/scratch/
+
+# =====================================================================
+# Local-only working files & build intermediates (never committed)
+# =====================================================================
+_paper_extract.txt
+docs/dataflow_diagram.pdf

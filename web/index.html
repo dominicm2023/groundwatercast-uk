@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GroundwaterCast UK — explorer</title>
+  <meta name="description" content="Daily probabilistic groundwater forecasts for the UK, built on open data. Indicative — not flood warnings." />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="apple-touch-icon" href="favicon.svg" />
+  <meta name="theme-color" content="#1a3a5c" />
+  <link rel="stylesheet" href="vendor/maplibre-gl.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header id="topbar">
+    <div class="brand">
+      <img class="logo" src="favicon.svg" width="30" height="30" alt="" />
+      <div>
+        <h1>GroundwaterCast UK</h1>
+        <p class="tagline">Daily groundwater forecasts · current status vs normal → 15-day fan → seasonal outlook</p>
+      </div>
+    </div>
+    <div class="topbar-meta">
+      <span id="data-asof" class="asof">loading…</span>
+      <a class="about-link" href="#" id="about-toggle">About</a>
+    </div>
+  </header>
+
+  <main id="layout">
+    <section id="map-pane">
+      <div id="map"></div>
+
+      <div id="left-rail">
+      <div id="controls">
+        <input id="search" type="search" placeholder="Search borehole name…"
+               autocomplete="off" spellcheck="false" />
+        <div class="segmented" id="view-mode" role="group" aria-label="Map view">
+          <button class="seg active" data-mode="active" title="Boreholes with a current status and/or a forecast">Active</button>
+          <button class="seg" data-mode="forecast" title="Boreholes with a 15-day forecast">Forecast</button>
+          <button class="seg" data-mode="all" title="Every monitored borehole">All</button>
+        </div>
+        <div id="view-count" class="view-count"></div>
+        <div id="timeline" class="timeline" hidden>
+          <div class="tl-row">
+            <span class="tl-name">Forecast timeline</span>
+            <span id="tl-frame" class="tl-frame">Today</span>
+          </div>
+          <input id="tl-slider" class="tl-slider" type="range" min="0" max="0"
+                 value="0" step="1" aria-label="Scrub the forecast timeline" />
+          <datalist id="tl-ticks"></datalist>
+          <div id="tl-note" class="tl-note" hidden>indicative forecast — not observed</div>
+        </div>
+        <label class="chk geo-toggle" id="geo-toggle-row">
+          <input type="checkbox" id="geology-toggle" /> Aquifer geology
+        </label>
+        <details id="watchlist-panel" class="wl-panel">
+          <!-- populated by watchlist.js (GWC_WATCH.mountPanel, after featById exists) -->
+        </details>
+      </div>
+
+      <div id="legend">
+        <div class="legend-title" id="legend-title">Current level vs normal</div>
+        <div class="legend-row"><span class="dot below"></span> Below normal</div>
+        <div class="legend-row"><span class="dot near"></span> Near normal</div>
+        <div class="legend-row"><span class="dot above"></span> Above normal</div>
+        <div class="legend-row"><span class="dot none"></span> No current status</div>
+        <div class="legend-row legend-ring"><span class="dot ring"></span> Has 15-day forecast</div>
+        <div class="legend-note">Faded fill = estimated from the forecast (no recent reading)</div>
+        <div id="geology-legend" hidden>
+          <div class="legend-title geo-title">Aquifer potential</div>
+          <div class="legend-row"><span class="sq" data-geo="Principal"></span> Principal</div>
+          <div class="legend-row"><span class="sq" data-geo="Secondary"></span> Secondary</div>
+          <div class="legend-row"><span class="sq" data-geo="Low"></span> Low</div>
+          <div class="geo-note">Indicative, from BGS 625k bedrock geology (OGL)</div>
+        </div>
+      </div>
+      </div>
+    </section>
+
+    <aside id="detail" class="empty">
+      <div id="detail-empty">
+        <h2>Select a borehole</h2>
+        <p>Click a point on the map to see its current status, 15-day
+           probabilistic forecast and 6-month seasonal outlook.</p>
+        <p class="muted">Colour shows where each borehole sits today against
+           its own monthly normals. Boreholes with an outer ring also carry a
+           probabilistic forecast.</p>
+      </div>
+      <div id="detail-body" hidden></div>
+    </aside>
+  </main>
+
+  <div id="about" hidden>
+    <div class="about-card">
+      <button class="close" id="about-close" aria-label="Close">×</button>
+      <h2>About GroundwaterCast UK</h2>
+      <p id="about-disclaimer" class="disclaimer"></p>
+      <div id="about-coverage" class="caption"></div>
+      <p>One view per borehole across three horizons in a single vocabulary —
+         <b>below / near / above normal</b>:</p>
+      <ul>
+        <li><b>Current status vs normal</b> — the latest observed level placed
+            on the borehole's own monthly climatology (a percentile for the
+            month), plus a 7-day trend.</li>
+        <li><b>15-day forecast</b> — a P10/P50/P90 fan from the ECMWF ensemble
+            through a calibrated per-borehole recharge model, with breach
+            probability against a threshold.</li>
+        <li><b>Seasonal outlook (months 1–6)</b> — tercile probabilities of
+            below / near / above-normal groundwater.</li>
+      </ul>
+      <p class="disclaimer"><b>Indicative, uncalibrated research forecast.</b>
+         Not flood warnings; not for safety-critical use.</p>
+      <p id="about-attribution" class="attribution"></p>
+    </div>
+  </div>
+
+  <script src="vendor/maplibre-gl.js"></script>
+  <script src="config.js"></script>
+  <script src="contract_fields.js"></script>
+  <script src="charts.js"></script>
+  <script src="detail.js"></script>
+  <script src="watchlist.js"></script>
+  <script src="ladders.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

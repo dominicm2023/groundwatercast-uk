@@ -1,0 +1,28 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 3.13 (not the 3.14 used locally): far better wheel availability on
+      # hosted runners, and requirements.txt already gates the only
+      # version-sensitive deps (xarray / netCDF4) with python_version < "3.15"
+      # markers, so the resolved set is identical.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # requirements-pastas.txt is deliberately NOT installed: pastas-dependent
+      # tests guard themselves with pytest.importorskip("pastas") and skip.
+      - name: Run test suite
+        run: python -m pytest -q

@@ -1,0 +1,55 @@
+# GroundwaterCast UK — container deployment (see docs/deploy.md).
+#
+#   docker compose build
+#   docker compose up -d        -> http://localhost:8501
+#
+# All pipeline artefacts live on host bind mounts so they persist across
+# image rebuilds and can be (re)built either inside the container or on
+# the host. A FRESH deploy must populate ./data first — docs/deploy.md
+# section "First run: populate the data volume".
+
+services:
+  app:
+    build: .
+    image: groundwatercast
+    ports:
+      - "8501:8501"
+    environment:
+      # Recurring refreshes belong to host cron in hosted deployments
+      # (docs/deploy.md has the crontab). Set to "1" to fall back to the
+      # in-app staleness-gated refresh nets on a host with no scheduler.
+      GWC_APP_START_REFRESH: "0"
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./outputs:/app/outputs
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------
+  # Scheduling: preferred pattern is one-shot `docker compose run` jobs
+  # from the HOST crontab against the same image + volumes — the image
+  # ships no cron daemon. Cadences (docs/deploy.md):
+  #
+  #   0 * * * *    cd /path/to/repo && docker compose run --rm app python -m scripts.run_chain --live
+  #   30 6 * * *   cd /path/to/repo && docker compose run --rm app python -m scripts.run_chain --ensemble
+  #
+  # (--ensemble, not --forecast: the Pastas stages need the separate
+  # .venv-pastas environment, which is out of scope for this image —
+  # docs/deploy.md "Pastas forecast".)
+  #
+  # Alternative, if you cannot touch the host crontab: uncomment this
+  # minimal looping refresher service (live chain only, hourly).
+  #
+  # refresher:
+  #   image: groundwatercast
+  #   volumes:
+  #     - ./data:/app/data
+  #     - ./models:/app/models
+  #     - ./outputs:/app/outputs
+  #   command: >
+  #     sh -c "while true; do
+  #              python -m scripts.run_chain --live;
+  #              sleep 3600;
+  #            done"
+  #   restart: unless-stopped
+  # ---------------------------------------------------------------------

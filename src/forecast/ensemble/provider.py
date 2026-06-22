@@ -1,0 +1,112 @@
+"""Ensemble rainfall provider abstraction — the free→paid hinge.
+
+The whole probabilistic-ensemble pipeline treats a weather ensemble as exactly
+one thing: *N member daily-rainfall series for a location*. Every downstream
+stage (bias-correction → bridge → Weibull recharge → GW roll → aggregation) is
+provider-agnostic, so swapping the free source for a paid Met Office feed later
+is one new class + one config value — no downstream change.
+
+See docs/ensemble_forecast_design.md (§3) for the contract.
+
+Output schema (tidy long form), one row per (member, date):
+    member    : int   — 0 = control, 1..N = perturbed members
+    date      : datetime64[ns] (UTC midnight, tz-naive) — one row per day
+    precip_mm : float — daily total precipitation, non-negative
+
+Raw provider payloads are cached under
+    <cache_root>/<provider_name>/<run>/...
+before any parsing, satisfying the raw-data-for-audit non-negotiable.
+"""
+from __future__ import annotations
+
+import abc
+from datetime import date
+from pathlib import Path
+
+import pandas as pd
+
+OUTPUT_COLUMNS = ["member", "date", "precip_mm"]
+
+
+class EnsembleRainfallProvider(abc.ABC):
+    """Base class for ensemble rainfall providers.
+
+    Subclasses implement :meth:`fetch`. They should call :meth:`_cache_dir`
+    to obtain (and create) the per-run cache directory, write their raw
+    payload there, then return a frame that passes :meth:`_validate`.
+    """
+
+    #: short, filesystem-safe identifier used in the cache path and config
+    name: str = "base"
+
+    def __init__(self, cache_root: str | Path = "data/raw/ensemble"):
+        self.cache_root = Path(cache_root)
+
+    # -- contract ------------------------------------------------------------
+    @abc.abstractmethod
+    def fetch(self, lat: float, lon: float, start: date,
+              horizon_days: int) -> pd.DataFrame:
+        """Return member daily rainfall for a point.
+
+        Parameters
+        ----------
+        lat, lon      : point coordinates (WGS84 decimal degrees).
+        start         : first forecast day requested (provider may begin at
+                        its own run; callers filter to ``>= start`` as needed).
+        horizon_days  : number of forecast days requested.
+
+        Returns a DataFrame with columns OUTPUT_COLUMNS.
+        """
+
+    # -- shared helpers ------------------------------------------------------
+    def _cache_dir(self, run: str) -> Path:
+        """Return (and create) the cache dir for one run, e.g.
+        ``data/raw/ensemble/open_meteo/2026060712``."""
+        d = self.cache_root / self.name / run
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    @staticmethod
+    def _validate(df: pd.DataFrame) -> pd.DataFrame:
+        """Normalise dtypes / ordering and assert the output contract."""
+        missing = [c for c in OUTPUT_COLUMNS if c not in df.columns]
+        if missing:
+            raise ValueError(f"provider output missing columns: {missing}")
+        out = df[OUTPUT_COLUMNS].copy()
+        out["member"] = out["member"].astype(int)
+        out["date"] = pd.to_datetime(out["date"]).dt.tz_localize(None).dt.normalize()
+        out["precip_mm"] = pd.to_numeric(out["precip_mm"], errors="coerce")
+        # Daily precipitation is non-negative; clamp tiny negative artefacts.
+        out["precip_mm"] = out["precip_mm"].clip(lower=0.0)
+        out = (out.dropna(subset=["precip_mm"])
+               .sort_values(["member", "date"])
+               .reset_index(drop=True))
+        return out
+
+
+# ---------------------------------------------------------------------------
+# Factory
+# ---------------------------------------------------------------------------
+
+def get_provider(name: str, *, cache_root: str | Path = "data/raw/ensemble",
+                 **kwargs) -> EnsembleRainfallProvider:
+    """Construct a provider by config name.
+
+    Known names:
+        "open_meteo"     — OpenMeteoEnsemble (free, non-commercial; prototyping)
+        "ecmwf_opendata" — ECMWFOpenDataENS (free, CC-BY-4.0; production)
+        "mogreps"        — reserved for the paid Met Office feed (not built)
+    """
+    # Local imports avoid importing heavy/optional deps (cfgrib) unless needed.
+    if name == "open_meteo":
+        from .open_meteo import OpenMeteoEnsemble
+        return OpenMeteoEnsemble(cache_root=cache_root, **kwargs)
+    if name == "ecmwf_opendata":
+        from .ecmwf_opendata import ECMWFOpenDataENS
+        return ECMWFOpenDataENS(cache_root=cache_root, **kwargs)
+    if name == "mogreps":
+        raise NotImplementedError(
+            "The paid Met Office MOGREPS provider is a future drop-in "
+            "(docs/ensemble_forecast_design.md §12). Not yet implemented."
+        )
+    raise ValueError(f"unknown ensemble provider: {name!r}")

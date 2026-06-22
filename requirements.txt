@@ -1,0 +1,34 @@
+# Core data + analytics
+requests
+pandas
+numpy
+scipy
+scikit-learn
+shapely
+pyyaml         # user thresholds + known-bad station register
+
+# Parquet store (per-station GW shards)
+pyarrow
+
+# Streamlit dashboard
+streamlit>=1.46
+streamlit-folium
+folium
+plotly
+
+# QA
+pytest
+
+# Free-data migration (docs/free_data_migration.md)
+pyet           # self-computed FAO-56 ET0 (W5) — validated vs the OM series
+cdsapi         # ERA5 daily met via Copernicus CDS (W4; needs a free CDS key)
+
+# Probabilistic ensemble forecast (docs/ensemble_forecast_design.md)
+# The default dev provider (open_meteo) needs only `requests` (above).
+# The ecmwf_opendata GRIB provider (production; CC-BY-4.0) has its own
+# extras file — requirements-grib.txt. eccodes ships binary wheels (incl.
+# Windows) since 2.37.0; if your CPython is newer than the wheels (e.g.
+# 3.14), install into a small side-venv on the newest wheeled CPython
+# (the `.venv-grib` pattern, mirroring `.venv-pastas`).
+xarray         # synthetic-Dataset GRIB tests + optional providers; CDS NetCDF reads
+netcdf4        # xarray engine for the CDS ERA5 daily-statistics NetCDF responses (W4)

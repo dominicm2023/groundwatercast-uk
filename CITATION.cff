@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+title: GroundwaterCast UK
+message: "If you use this software or its forecasts, please cite it."
+type: software
+authors:
+  - family-names: Matthews
+    given-names: Dominic
+repository-code: "https://github.com/dominicm2023/groundwatercast"
+url: "https://groundwatercast.com"
+abstract: >-
+  Per-borehole probabilistic groundwater-level forecasts for England — a daily
+  15-day ensemble fan and a 6-month seasonal outlook — built entirely on free,
+  commercially-licensed open data (ECMWF Open Data, Copernicus CDS ERA5 + SEAS5,
+  Environment Agency Hydrology), via calibrated Pastas transfer-function models.
+keywords:
+  - groundwater
+  - hydrology
+  - forecasting
+  - ensemble
+  - ERA5
+  - ECMWF
+  - SEAS5
+  - open-data
+  - England
+license: MIT
