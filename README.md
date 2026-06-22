@@ -54,7 +54,7 @@ free commercial-clean sources — is in [`docs/free_data_migration.md`](docs/fre
 ## Quick start
 
 ```bash
-git clone <repo-url> && cd groundwatercast
+git clone https://github.com/dominicm2023/groundwatercast-uk.git && cd groundwatercast-uk
 pip install -r requirements.txt
 
 python -m src.catalogue.build       # EA station catalogue for the configured region

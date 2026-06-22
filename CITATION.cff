@@ -5,7 +5,7 @@ type: software
 authors:
   - family-names: Matthews
     given-names: Dominic
-repository-code: "https://github.com/dominicm2023/groundwatercast"
+repository-code: "https://github.com/dominicm2023/groundwatercast-uk"
 url: "https://groundwatercast.com"
 abstract: >-
   Per-borehole probabilistic groundwater-level forecasts for England — a daily
