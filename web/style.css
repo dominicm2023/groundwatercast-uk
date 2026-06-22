@@ -384,3 +384,10 @@ body {
 .tl-frame { font-size: 0.78rem; font-weight: 600; color: #1f6fb2; }
 .tl-slider { width: 100%; margin: 7px 0 2px; accent-color: #1f6fb2; cursor: pointer; }
 .tl-note { font-size: 0.68rem; font-style: italic; color: var(--muted); }
+.tl-controls { display: flex; align-items: center; gap: 8px; margin: 7px 0 2px; }
+.tl-controls .tl-slider { margin: 0; flex: 1 1 auto; width: auto; }
+.tl-play { flex: 0 0 auto; width: 24px; height: 24px; padding: 0; border: 1px solid var(--line);
+  border-radius: 50%; background: #fff; color: #1f6fb2; font-size: 0.62rem; line-height: 1;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.tl-play:hover { background: #eef5fb; }
+.tl-play[aria-pressed="true"] { background: #1f6fb2; color: #fff; border-color: #1f6fb2; }

@@ -145,6 +145,32 @@
         if (i !== curFrame) { curFrame = i; setFrame(i); }
       });
     }
+    // Play / pause: auto-advance through the frames on a timer — the hands-free
+    // "watch the forecast evolve" demo. Programmatic slider moves don't fire
+    // "input", so a manual drag still cancels playback (listener below).
+    const playBtn = document.getElementById("tl-play");
+    if (playBtn) {
+      let timer = null;
+      const setThumb = (i) => { slider.value = String(byDays ? DAYS[i] : i); };
+      const stop = () => {
+        if (timer) { clearInterval(timer); timer = null; }
+        playBtn.textContent = "▶";                 // ▶
+        playBtn.setAttribute("aria-pressed", "false");
+        playBtn.setAttribute("aria-label", "Play forecast timeline");
+      };
+      playBtn.addEventListener("click", () => {
+        if (timer) { stop(); return; }
+        playBtn.textContent = "⏸";                 // ⏸
+        playBtn.setAttribute("aria-pressed", "true");
+        playBtn.setAttribute("aria-label", "Pause forecast timeline");
+        if (curFrame >= FRAMES.length - 1) { curFrame = 0; setFrame(0); setThumb(0); }
+        timer = setInterval(() => {
+          const next = curFrame >= FRAMES.length - 1 ? 0 : curFrame + 1;
+          curFrame = next; setFrame(next); setThumb(next);
+        }, 850);
+      });
+      slider.addEventListener("input", stop);           // manual scrub cancels playback
+    }
     box.hidden = false;
     setFrame(0);
   }

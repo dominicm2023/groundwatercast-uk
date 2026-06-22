@@ -45,8 +45,12 @@
             <span class="tl-name">Forecast timeline</span>
             <span id="tl-frame" class="tl-frame">Today</span>
           </div>
-          <input id="tl-slider" class="tl-slider" type="range" min="0" max="0"
-                 value="0" step="1" aria-label="Scrub the forecast timeline" />
+          <div class="tl-controls">
+            <button id="tl-play" class="tl-play" type="button" aria-pressed="false"
+                    aria-label="Play forecast timeline" title="Play / pause">&#9654;</button>
+            <input id="tl-slider" class="tl-slider" type="range" min="0" max="0"
+                   value="0" step="1" aria-label="Scrub the forecast timeline" />
+          </div>
           <datalist id="tl-ticks"></datalist>
           <div id="tl-note" class="tl-note" hidden>indicative forecast — not observed</div>
         </div>
