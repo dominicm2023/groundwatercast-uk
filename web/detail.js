@@ -17,11 +17,6 @@
   // normal-band half-width. Structural cross-check, NOT a calibrated band.
   const SPREAD_HI = 0.5;
   const SPREAD_MED = 0.25;
-  // Coverage threshold for the extended (EC46) splice. When the achieved
-  // horizon falls below this, the extended outlook didn't materialise this run
-  // (transient EC46 failure OR free-path config that disables the extension) —
-  // surface a neutral coverage note. Full path = 46, short path ~15; 30 splits them.
-  const EXTENDED_MIN = 30;
 
   // -- "Show data" disclosures (1.3) --
   // Module-scoped refs set at render() start; the post-render binder bindData()
@@ -277,18 +272,13 @@
       out.push(`</div>`);
     }
 
-    // -- 46-day forecast --
+    // -- forecast (short-range daily fan, continued by the seasonal outlook) --
     const fc = detail.forecast;
     const hd = fc && fc.horizon_days;
-    const shortHorizon = hd != null && hd < EXTENDED_MIN;
-    const hLabel = shortHorizon ? esc(hd) : "46";   // self-consistent header + data label
+    const hLabel = hd != null ? esc(hd) : "";   // real forecast horizon (days)
     if (fc) {
-      const fcTitle = `${hLabel}-day forecast`;
+      const fcTitle = hLabel ? `${hLabel}-day forecast` : "Forecast";
       out.push(`<div class="d-section"><h3>${fcTitle}</h3>`);
-      if (shortHorizon) {
-        out.push(`<p class="coverage-note">Extended outlook unavailable this run — ` +
-          `showing the ${esc(hd)}-day short-range window only.</p>`);
-      }
       if (fc.headline) out.push(`<p class="headline">${esc(fc.headline)}</p>`);
       // stale-seed note: when the last reading is weeks old, the nowcast
       // estimates the level to today from observed rainfall (the dashed segment).

@@ -191,12 +191,11 @@
 
     _fanCtx = { W, H, m, iw, ih, x0, x1, ylo, yhi, obs, fan: fanAll, seas, thr };
 
-    // Horizon-aware label so a degraded (short-horizon) run isn't announced as
-    // "15-day" by screen readers (mirrors the detail panel's coverage note).
+    // Real forecast horizon for the screen-reader label.
     const _hd = detail.forecast && detail.forecast.horizon_days;
-    const _hLbl = (_hd != null && _hd < 30) ? _hd : 46;
+    const _hLbl = _hd != null ? _hd : 15;
     return `<svg class="svg-chart svg-fan" viewBox="0 0 ${W} ${H}" role="img" ` +
-      `aria-label="Groundwater level: observed history and ${_hLbl}-day forecast fan">${parts.join("")}</svg>`;
+      `aria-label="Groundwater level: observed history and ${_hLbl}-day forecast fan, continuing as a seasonal outlook">${parts.join("")}</svg>`;
   }
 
   // Attach a hover crosshair + value readout to a rendered fan <svg>, using
