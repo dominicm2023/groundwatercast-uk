@@ -17,8 +17,6 @@ against the station's own history, stuck-sensor flag).
 from __future__ import annotations
 
 import pandas as pd
-import requests
-
 ROOT_FM_BASE = "https://environment.data.gov.uk/flood-monitoring"
 
 # Tunables — exposed at module level for testability
@@ -26,6 +24,12 @@ LIVE_WINDOW_DAYS:    int   = 7
 Z_SCORE_OUTLIER_CAP: float = 10.0   # drop readings beyond this many σ
 STUCK_THRESHOLD_H:   float = 24.0   # value unchanged > this → stuck flag
 REQUEST_TIMEOUT_S:   int   = 30
+
+# data_source marker the live refresher writes on a frozen-telemetry daily row
+# (apply_qc flagged the window stuck). Single source of truth — readers that
+# date "the latest real reading" (status, freshness) must treat a row carrying
+# this marker as NOT a trustworthy fresh reading.
+LIVE_STUCK_SOURCE: str = "logged_live_stuck"
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +108,7 @@ def fetch_live_readings(
     }
     payload: dict | None = None
     try:
+        import requests  # lazy: keeps the network dep out of pure-read importers
         r = requests.get(url, params=params, timeout=timeout)
         r.raise_for_status()
         payload = r.json()
@@ -163,6 +168,7 @@ def fetch_live_rainfall(
     }
     payload: dict | None = None
     try:
+        import requests  # lazy: keeps the network dep out of pure-read importers
         r = requests.get(url, params=params, timeout=timeout)
         r.raise_for_status()
         payload = r.json()

@@ -424,3 +424,33 @@ def test_contract_doc_in_sync():
                 | set(C.NORMALS_ROW_KEYS) | set(C.TREND_FLAG_KEYS))
     undocumented = sorted(k for k in all_keys if f"`{k}`" not in text)
     assert not undocumented, f"keys missing from artifact_contract.md: {undocumented}"
+
+
+def test_read_shard_excludes_stuck_rows(tmp_path):
+    # A frozen sensor (logged_live_stuck) carries the last value forward with
+    # is_interpolated=0. _read_shard must drop those rows so the status/observed
+    # series ends at the last GENUINE reading, not the frozen tail.
+    from src.publish.pack import _read_shard
+    df = pd.DataFrame({
+        "date": pd.to_datetime(["2026-06-06", "2026-06-07", "2026-06-08",
+                                "2026-06-09", "2026-06-10"]),
+        "GW_Level": [50.0, 50.1, 50.2, 50.2, 50.2],
+        "is_interpolated": [0, 0, 0, 0, 0],
+        "data_source": ["logged", "logged", "logged_live",
+                        "logged_live_stuck", "logged_live_stuck"],
+    })
+    df.to_parquet(tmp_path / "S.parquet", index=False)
+    s = _read_shard(tmp_path, "S")
+    assert len(s) == 3                                  # two stuck rows dropped
+    assert s.index.max() == pd.Timestamp("2026-06-08")  # last real reading
+    assert float(s.iloc[-1]) == 50.2
+
+
+def test_read_shard_without_data_source_column(tmp_path):
+    # Older / full-rebuild shards may lack data_source — must still read fine.
+    from src.publish.pack import _read_shard
+    df = pd.DataFrame({"date": pd.to_datetime(["2026-06-07", "2026-06-08"]),
+                       "GW_Level": [50.0, 50.1]})
+    df.to_parquet(tmp_path / "T.parquet", index=False)
+    s = _read_shard(tmp_path, "T")
+    assert len(s) == 2 and s.index.max() == pd.Timestamp("2026-06-08")

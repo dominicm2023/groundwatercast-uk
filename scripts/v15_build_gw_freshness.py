@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.forecast.live_levels import LIVE_STUCK_SOURCE
 from src.utils.io_encoding import force_utf8_stdio
 
 JOINED = Path("data/features/joined_timeseries.csv")
@@ -57,9 +58,16 @@ def main():
             real = df[df["is_interpolated"] == 0]
             if real.empty:
                 continue
+            real = real.sort_values("date")
+            # A frozen-telemetry row is marked is_interpolated=0 but is NOT a
+            # trustworthy fresh reading: date the freshness from the last
+            # NON-stuck real reading (so the label demotes honestly), while
+            # still surfacing the stuck data_source so the detail panel warns.
+            trust = real[real["data_source"].astype(str) != LIVE_STUCK_SOURCE]
+            dated = trust if not trust.empty else real
             rows.append({
                 "station_id":        sid,
-                "last_real_reading": real["date"].max(),
+                "last_real_reading": dated["date"].max(),
                 "data_source":       real["data_source"].iloc[-1],
             })
         latest = pd.DataFrame(rows)

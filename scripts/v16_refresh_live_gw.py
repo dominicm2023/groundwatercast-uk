@@ -48,7 +48,11 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 import pandas as pd
 
-from src.forecast.live_levels import apply_qc, fetch_live_readings
+from src.forecast.live_levels import (
+    LIVE_STUCK_SOURCE,
+    apply_qc,
+    fetch_live_readings,
+)
 from src.utils.io_encoding import force_utf8_stdio
 
 XREF = Path("data/processed/flood_monitoring_xref.csv")
@@ -108,7 +112,7 @@ def _normalise_to_daily(live: pd.DataFrame, *, stuck: bool = False) -> pd.DataFr
              .groupby("date", as_index=False)["value"].mean()
              .rename(columns={"value": "GW_Level"}))
     daily["is_interpolated"] = 0
-    daily["data_source"]     = "logged_live_stuck" if stuck else "logged_live"
+    daily["data_source"]     = LIVE_STUCK_SOURCE if stuck else "logged_live"
     return daily[["date", "GW_Level", "is_interpolated", "data_source"]]
 
 
@@ -154,7 +158,7 @@ def update_one_shard(bh_id: str, fm_notation: str,
     # already carries an audited row, then replace only the existing live rows
     # the (filtered) live window now covers. (H3: live overlap with audited is
     # rare — live is the recent tail — but when it happens, audited must stand.)
-    _LIVE_SOURCES = {"logged_live", "logged_live_stuck"}
+    _LIVE_SOURCES = {"logged_live", LIVE_STUCK_SOURCE}
     audited_dates = set(existing.loc[~existing["data_source"].isin(_LIVE_SOURCES),
                                      "date"])
     new_daily = new_daily[~new_daily["date"].isin(audited_dates)]

@@ -44,6 +44,7 @@ from src.publish.contract import (
     TREND_FLAG_KEYS,
 )
 from src.dashboard.status import status_from_series
+from src.forecast.live_levels import LIVE_STUCK_SOURCE
 
 ATTRIBUTION = ("Contains Environment Agency data licensed under the Open "
                "Government Licence v3.0. Forecast forcing from ECMWF Open "
@@ -217,7 +218,15 @@ def _read_shard(shard_dir: Path, sid: str) -> pd.Series:
     fp = shard_dir / f"{sid}.parquet"
     if not fp.exists():
         return pd.Series(dtype="float64", name="GW_Level")
-    df = pd.read_parquet(fp, columns=["date", "GW_Level"])
+    # Read data_source where the shard carries it so a frozen-telemetry row
+    # (LIVE_STUCK_SOURCE) is excluded from the status/observed series — a stuck
+    # value must not paint a confident, fresh current status on the map. Older
+    # full-rebuild shards may lack the column; fall back to the bare read.
+    try:
+        df = pd.read_parquet(fp, columns=["date", "GW_Level", "data_source"])
+        df = df[df["data_source"].astype(str) != LIVE_STUCK_SOURCE]
+    except (ValueError, KeyError):
+        df = pd.read_parquet(fp, columns=["date", "GW_Level"])
     idx = pd.DatetimeIndex(pd.to_datetime(df["date"]))
     if idx.tz is not None:
         idx = idx.tz_localize(None)
