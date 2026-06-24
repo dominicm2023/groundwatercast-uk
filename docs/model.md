@@ -51,7 +51,7 @@ history — no composite weights, no thresholds to defend.
 3. Observations older than **45 days** carry no status claim (grey "no
    status" chip); the level and its age are still shown.
 
-The same below/near/above palette and wording runs through the 15-day
+The same below/near/above palette and wording runs through the 14-day
 fan's secondary tier signal (`p_above_p90_14d` — P(any day in the
 operational window exceeds that month's P90)) and the seasonal tercile
 bars — one vocabulary across all three horizons.
@@ -75,7 +75,7 @@ badges it accordingly.
 
 ---
 
-## Probabilistic forecast (15 days)
+## Probabilistic forecast (14 days)
 
 In-scope boreholes carry a probabilistic groundwater forecast driven by
 the 51-member ECMWF ENS (daily, to day 15). Each member's rainfall is

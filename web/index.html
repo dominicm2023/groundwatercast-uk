@@ -17,7 +17,7 @@
       <img class="logo" src="favicon.svg" width="30" height="30" alt="" />
       <div>
         <h1>GroundwaterCast UK</h1>
-        <p class="tagline">Daily groundwater forecasts · current status vs normal → 15-day fan → seasonal outlook</p>
+        <p class="tagline">Daily groundwater forecasts · current status vs normal → 14-day fan → seasonal outlook</p>
       </div>
     </div>
     <div class="topbar-meta">
@@ -36,7 +36,7 @@
                autocomplete="off" spellcheck="false" />
         <div class="segmented" id="view-mode" role="group" aria-label="Map view">
           <button class="seg active" data-mode="active" title="Boreholes with a current status and/or a forecast">Active</button>
-          <button class="seg" data-mode="forecast" title="Boreholes with a 15-day forecast">Forecast</button>
+          <button class="seg" data-mode="forecast" title="Boreholes with a 14-day forecast">Forecast</button>
           <button class="seg" data-mode="all" title="Every monitored borehole">All</button>
         </div>
         <div id="view-count" class="view-count"></div>
@@ -68,7 +68,7 @@
         <div class="legend-row"><span class="dot near"></span> Near normal</div>
         <div class="legend-row"><span class="dot above"></span> Above normal</div>
         <div class="legend-row"><span class="dot none"></span> No current status</div>
-        <div class="legend-row legend-ring"><span class="dot ring"></span> Has 15-day forecast</div>
+        <div class="legend-row legend-ring"><span class="dot ring"></span> Has 14-day forecast</div>
         <div class="legend-note">Faded fill = estimated from the forecast (no recent reading)</div>
         <div id="geology-legend" hidden>
           <div class="legend-title geo-title">Aquifer potential</div>
@@ -84,7 +84,7 @@
     <aside id="detail" class="empty">
       <div id="detail-empty">
         <h2>Select a borehole</h2>
-        <p>Click a point on the map to see its current status, 15-day
+        <p>Click a point on the map to see its current status, 14-day
            probabilistic forecast and 6-month seasonal outlook.</p>
         <p class="muted">Colour shows where each borehole sits today against
            its own monthly normals. Boreholes with an outer ring also carry a
@@ -106,7 +106,7 @@
         <li><b>Current status vs normal</b> — the latest observed level placed
             on the borehole's own monthly climatology (a percentile for the
             month), plus a 7-day trend.</li>
-        <li><b>15-day forecast</b> — a P10/P50/P90 fan from the ECMWF ensemble
+        <li><b>14-day forecast</b> — a P10/P50/P90 fan from the ECMWF ensemble
             through a calibrated per-borehole recharge model, with breach
             probability against a threshold.</li>
         <li><b>Seasonal outlook (months 1–6)</b> — tercile probabilities of

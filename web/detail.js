@@ -1,5 +1,5 @@
 // Detail panel — render stations/<id>.json as the three-horizon narrative:
-// current status vs normal → 15-day fan → seasonal terciles.
+// current status vs normal → 14-day fan → seasonal terciles.
 (function () {
   "use strict";
 
@@ -276,8 +276,13 @@
     const fc = detail.forecast;
     const hd = fc && fc.horizon_days;
     const hLabel = hd != null ? esc(hd) : "";   // real forecast horizon (days)
+    const hasSeasonal = !!(detail.seasonal && detail.seasonal.months && detail.seasonal.months.length);
     if (fc) {
-      const fcTitle = hLabel ? `${hLabel}-day forecast` : "Forecast";
+      // When the chart continues into the 6-month seasonal outlook, a bare
+      // "14-day forecast" undersells it — use a span-neutral header instead.
+      const fcTitle = hasSeasonal
+        ? "Forecast outlook"
+        : (hLabel ? `${hLabel}-day forecast` : "Forecast");
       out.push(`<div class="d-section"><h3>${fcTitle}</h3>`);
       if (fc.headline) out.push(`<p class="headline">${esc(fc.headline)}</p>`);
       // stale-seed note: when the last reading is weeks old, the nowcast

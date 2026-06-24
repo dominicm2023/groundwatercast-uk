@@ -129,7 +129,7 @@ contents.
 
 `gw_outlook.py` joins the current vs-normal status onto the forecast
 triage (`status.attach_current_status`) — the combined product surface:
-status-now → trend → 15-day fan → breach probability → seasonal
+status-now → trend → 14-day fan → breach probability → seasonal
 terciles, all in the below/near/above-normal vocabulary.
 
 ### Shared dashboard modules (`src/dashboard/`)

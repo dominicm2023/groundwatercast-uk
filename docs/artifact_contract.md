@@ -159,7 +159,7 @@ Top level: `schema_version`, `station`, `status`, `freshness`, `normals`,
     etc.); `roll_p50` is the reduced-form cross-check median, `model_spread` =
     `p50` − `roll_p50`. `segment` is `"nowcast"` for the modelled last-obs → today
     gap (observed rainfall; negative `lead`; `roll_p50`/`model_spread` null) or
-    `"forecast"` for the 15-day horizon from today.
+    `"forecast"` for the 14-day horizon from today.
 - **`seasonal`** (`null` when absent): `run`, `origin_date`,
   `seas5_weighted` (bool), `n_traces`, and `months` — up to 6 rows with keys
   `month_ahead`, `month_start`, `p_below`, `p_near`, `p_above`, `gw_p10`,

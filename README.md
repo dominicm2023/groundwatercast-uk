@@ -1,6 +1,6 @@
 # 💧 GroundwaterCast UK
 
-**Per-borehole probabilistic groundwater forecasts for England — a 15-day daily
+**Per-borehole probabilistic groundwater forecasts for England — a 14-day daily
 fan and a 6-month seasonal outlook — built entirely on free,
 commercially-licensed open data.**
 
@@ -12,7 +12,7 @@ commercially-licensed open data.**
 
 <p align="center">
   <img src="docs/img/dataflow.png" width="820"
-       alt="Data flow: ECMWF Open Data, EA Hydrology and Copernicus CDS (ERA5 + SEAS5) feed calibrated per-borehole Pastas models, producing a daily 15-day probabilistic fan and a 6-month seasonal outlook, published as a per-borehole artifact pack and a MapLibre explorer.">
+       alt="Data flow: ECMWF Open Data, EA Hydrology and Copernicus CDS (ERA5 + SEAS5) feed calibrated per-borehole Pastas models, producing a daily 14-day probabilistic fan and a 6-month seasonal outlook, published as a per-borehole artifact pack and a MapLibre explorer.">
 </p>
 
 GroundwaterCast turns open weather and hydrology feeds into one forecast view
@@ -23,7 +23,7 @@ per monitored borehole, across three horizons in a single vocabulary —
   the hour by live EA telemetry where available) placed against the borehole's
   own monthly climatology: below/near/above normal, an approximate percentile,
   and a 7-day trend.
-- **Forecast outlook (15 days)** — a probabilistic forecast per borehole:
+- **Forecast outlook (14 days)** — a probabilistic forecast per borehole:
   P10/P50/P90 fan, breach probability against your thresholds, and
   first-crossing dates, driven by all **51 ECMWF ENS rainfall members** through
   a calibrated per-borehole recharge model (Pastas transfer-function), with a

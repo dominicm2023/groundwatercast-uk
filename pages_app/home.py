@@ -72,7 +72,7 @@ st.markdown(
     """
     <div class="gwc-hero">
       <h1>💧 GroundwaterCast UK</h1>
-      <p class="lead">Daily probabilistic groundwater forecasts to 15 days,
+      <p class="lead">Daily probabilistic groundwater forecasts to 14 days,
         built entirely on open data.</p>
     </div>
     """,
@@ -87,7 +87,7 @@ st.markdown(
       <h3>Forecast outlook</h3>
       <p class="sub">One view per borehole, three horizons, one vocabulary:
         <b>current level vs normal</b> (live-seeded percentile for the
-        month) → <b>15-day probabilistic fan</b> (daily ECMWF ensemble to
+        month) → <b>14-day probabilistic fan</b> (daily ECMWF ensemble to
         day 15) with breach probabilities and
         first-crossing dates → <b>months 1–6 seasonal terciles</b>
         (below / near / above normal).</p>

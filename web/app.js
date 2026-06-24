@@ -458,7 +458,7 @@
       covEl.textContent =
         `Coverage: ${published} boreholes with observed data are published here` +
         (catalogued > published ? ` (of ~${catalogued} catalogued — the rest have no usable record yet)` : "") +
-        `. ${fc} carry a 15-day probabilistic forecast; the rest show current status only.`;
+        `. ${fc} carry a 14-day probabilistic forecast; the rest show current status only.`;
       return;
     }
     const cat = cov.catalogued || 0;
@@ -476,7 +476,7 @@
     covEl.innerHTML =
       `<span class="cov-lead">Coverage of the monitored network</span> — of ` +
       `~${num(cat)} catalogued boreholes, <b>${num(cov.observed)}</b> are published ` +
-      `with observed data and <b>${num(fc)}</b> carry a 15-day forecast.` + liveClause +
+      `with observed data and <b>${num(fc)}</b> carry a 14-day forecast.` + liveClause +
       ` ${num(nodata)} have no usable record yet` +
       (withheld ? `; ${num(withheld)} are withheld (flagged data quality)` : "") + `.` +
       `<span class="cov-bar" role="img" aria-label="Coverage: ${num(fc)} forecast, ` +

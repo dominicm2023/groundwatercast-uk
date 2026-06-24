@@ -14,7 +14,7 @@ verified against a full archived winter (see §12).
 Per borehole, each run produces:
 
 1. **P10 / P50 / P90 level fan** — per-day quantiles of the member trajectories
-   over the 15-day horizon.
+   over the 14-day horizon.
 2. **Breach probability** — `P(level crosses threshold T within the horizon)` =
    the fraction of members whose trajectory crosses `T`. The urgency tier keys
    on the first 14 days (`p_breach_14d`).
@@ -155,7 +155,7 @@ the product is most useful. Far from any threshold, expect a tight fan and
 
 ### 9.1 Seasonal handoff — additive uncertainty band
 
-The 15-day fan and the months-1–6 seasonal outlook are two estimators of the
+The 14-day fan and the months-1–6 seasonal outlook are two estimators of the
 same head, and drawn naively they disagree *in width* at the seam: the fan
 terminal carries accumulated member-rainfall spread + AR1, while a raw ESP
 monthly band is only between-analog-year climatological spread — so the band

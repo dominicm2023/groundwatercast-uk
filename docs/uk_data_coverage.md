@@ -3,7 +3,7 @@
 **Status:** research note (reproducible API counts).
 **Date of all API counts:** 2026-06-11 (live read-only GETs; queries shown
 verbatim so they can be re-run).
-**Question:** how far across the UK does the open-data pipeline — a 15-day
+**Question:** how far across the UK does the open-data pipeline — a 14-day
 probabilistic groundwater forecast plus a 6-month seasonal outlook — reach?
 England is the default build; Wales, Scotland and Northern Ireland are assessed
 for whether the same machinery extends to them.
@@ -86,7 +86,7 @@ Implications:
   readings endpoint (`api.readings_url_template` in config).
 - **70% of national GW stations are dipped-only.** These can be displayed (we
   ingest dipped series via `scripts/v15_build_dipped_daily_series.py`) but cannot
-  seed a daily 15-day forecast with a fresh head — they are catalogue/context
+  seed a daily 14-day forecast with a fresh head — they are catalogue/context
   content, not forecast targets.
 - **The method is chalk-calibrated** (Weibull recharge kernel; Pastas FlexModel
   on chalk boreholes — see

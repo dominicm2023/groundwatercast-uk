@@ -2,7 +2,7 @@
 //
 // A per-borehole ordered, operationally-named ladder (drought-permit /
 // hands-off-flow / abstraction-cessation / asset-flood …). Each rung shows its
-// standing against the PUBLISHED 15-day fan via window.GWC_WATCH.evaluateFloor
+// standing against the PUBLISHED 14-day fan via window.GWC_WATCH.evaluateFloor
 // (likely / possible / unlikely over the first 14 forecast leads) — NEVER a
 // fabricated or AR1-multiplied probability — and is datum-sanity-checked with
 // window.GWC_WATCH.datumSanity. No backend / pack / contract / Python change.

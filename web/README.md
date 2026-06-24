@@ -6,8 +6,8 @@ borehole, the product's three-horizon story in one vocabulary — **below / near
 / above normal**:
 
 - **map** — every borehole coloured by *current status vs normal*; an outer
-  ring marks the boreholes that also carry a 15-day forecast;
-- **detail panel** (click a borehole) — status-vs-normal ladder → 15-day
+  ring marks the boreholes that also carry a 14-day forecast;
+- **detail panel** (click a borehole) — status-vs-normal ladder → 14-day
   P10/P50/P90 fan with breach probability → months 1–6 seasonal terciles.
 
 No build step. Vanilla JS + a vendored MapLibre GL JS (BSD-3, in `vendor/`) +

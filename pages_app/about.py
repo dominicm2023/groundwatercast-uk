@@ -11,7 +11,7 @@ st.markdown("## ℹ️ About — methodology, data sources & roadmap")
 st.markdown(
     """
 **GroundwaterCast UK** produces daily probabilistic groundwater
-forecasts — current status vs normal, a 15-day fan, and months 1–6
+forecasts — current status vs normal, a 14-day fan, and months 1–6
 seasonal terciles — for boreholes monitored through the Environment
 Agency's open hydrology APIs, built entirely on open data.
 
@@ -46,11 +46,11 @@ median / tercile-2 / P90) built from the full observation history.
 An approximate percentile ("84th percentile for June") and a 7-day trend
 arrow accompany the status. Observations older than 45 days carry no
 status claim. The same below/near/above vocabulary (and palette) runs
-through the whole product — current status, the 15-day fan's tier signal
+through the whole product — current status, the 14-day fan's tier signal
 (P(above the month's P90) within 14 days), and the seasonal terciles —
 so there is one language, not a separate composite "risk" score.
 
-### Forecast outlook (15 days)
+### Forecast outlook (14 days)
 
 For each in-scope borehole, each of the 51 ensemble rainfall members is
 bias-corrected (per-borehole mean ratio against a 2-year reanalysis
@@ -74,7 +74,7 @@ exists; stale-seeded boreholes are demoted and flagged.
 
 ### Seasonal outlook (experimental, months 1–6)
 
-Beyond the 15-day fan, each in-scope borehole gets monthly **tercile
+Beyond the 14-day fan, each in-scope borehole gets monthly **tercile
 probabilities** — P(below / near / above-normal groundwater) against its
 own monthly climatology. Method: ~34 historic-year forcing traces (ERA5
 rainfall + ET0 at the borehole point, bias-matched to the local gauges)
