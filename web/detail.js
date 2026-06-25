@@ -236,6 +236,19 @@
     out.push(`<h2 class="d-name">${esc(stn.name || stn.station_id)}</h2>`);
     out.push(`<p class="d-sub">${esc(stn.aquifer || "—")} · ${fmt1(stn.lat)}°N ${fmt1(stn.lon)}°E</p>`);
 
+    // Share + verify-on-source actions. station_id IS the EA hydrology GUID, so
+    // the official record is a direct client-side URL ("where's the real
+    // data?"); Copy link makes the existing #bh deep-link shareable.
+    if (stn.station_id) {
+      out.push(`<div class="d-actions">` +
+        `<button type="button" class="d-act-btn d-copy-link">🔗 Copy link</button>` +
+        `<a class="d-act-btn" target="_blank" rel="noopener" ` +
+          `href="https://environment.data.gov.uk/hydrology/station/${encodeURIComponent(stn.station_id)}">` +
+          `Verify on the EA record ↗</a>` +
+        `<span class="d-act-status caption" role="status" aria-live="polite"></span>` +
+        `</div>`);
+    }
+
     // -- current status vs normal --
     out.push(`<div>${statusChip(st)}</div>`);
 
@@ -262,6 +275,9 @@
     if (fr.data_source && String(fr.data_source).indexOf("stuck") !== -1) {
       out.push(`<p class="stale-note">⚠ Sensor may be stuck (flat readings) — the latest value has not changed and may not reflect the true level. Treat the current reading with caution.</p>`);
     }
+
+    // Plain-English lead (lay audience) — deterministic, from panel values only.
+    out.push(plainSentence(detail));
 
     // ladder (needs the month's normals row)
     const mrow = (detail.normals || []).find((r) => r.month === st.month);
@@ -373,6 +389,54 @@
   function monthName(m) {
     return ["", "January", "February", "March", "April", "May", "June", "July",
       "August", "September", "October", "November", "December"][m] || "this month";
+  }
+
+  // Plain-English one-liner (deterministic, no LLM) — the lay-audience lead.
+  // Built only from values already on the panel; pre-caveated, no advice.
+  function plainSentence(detail) {
+    const st = detail.status || {};
+    const fc = detail.forecast;
+    const se = detail.seasonal;
+    const bits = [];
+    if (st.status) {
+      const pctTxt = (st.percentile != null && isFinite(st.percentile))
+        ? ` (around the ${ordinal(st.percentile)} percentile)` : "";
+      const trend = { rising: " and rising", falling: " and falling",
+        stable: " and holding steady" }[st.trend] || "";
+      bits.push(`this borehole is <b>${STATUS_LABEL[st.status]}</b> for ` +
+        `${monthName(st.month)}${pctTxt}${trend}`);
+    } else {
+      bits.push("there's no recent enough reading to place this borehole " +
+        "against its normal range");
+    }
+    if (fc && fc.p_breach_14d != null && isFinite(fc.p_breach_14d)) {
+      const p = fc.p_breach_14d;
+      const phrase = p < 0.01 ? "looks very unlikely"
+        : p > 0.5 ? "looks likely"
+          : `is around ${pct(p)}`;
+      bits.push(`the chance of crossing its threshold in the next 14 days ${phrase}`);
+    }
+    if (se && se.months && se.months.length) {
+      const m = se.months[0];
+      const probs = { below: m.p_below, near: m.p_near, above: m.p_above };
+      let lean = null, best = -1;
+      for (const k in probs) {
+        if (probs[k] != null && isFinite(probs[k]) && probs[k] > best) {
+          best = probs[k]; lean = k;
+        }
+      }
+      if (lean) {
+        const leanTxt = lean === "near" ? "close to normal"
+          : `leaning ${STATUS_LABEL[lean]}`;
+        bits.push(`the 6-month outlook is ${leanTxt}`);
+      }
+    }
+    if (!bits.length) return "";
+    const joined = bits.length === 1 ? bits[0]
+      : bits.slice(0, -1).join("; ") + "; and " + bits[bits.length - 1];
+    const sentence = joined.charAt(0).toUpperCase() + joined.slice(1);
+    return `<p class="plain-lang"><span class="pl-tag">In plain terms</span> ` +
+      `${sentence}. <span class="pl-caveat">Indicative only — not a flood warning.</span></p>`;
   }
 
   // -- column definitions (1.3). Each col: {key,label,get(row),type,fmt}. The
@@ -571,6 +635,14 @@
     }, true);
     // (b)/(c) sort + export
     container.addEventListener("click", (ev) => {
+      // Copy a shareable deep-link to this borehole (location already carries
+      // the #bh hash set by app.js on selection).
+      const linkBtn = ev.target.closest(".d-copy-link");
+      if (linkBtn) {
+        const status = linkBtn.parentElement.querySelector(".d-act-status");
+        copyText(location.href, status);
+        return;
+      }
       const sortBtn = ev.target.closest(".dd-sort");
       if (sortBtn) {
         const d = sortBtn.closest(".data-drawer"); const kind = d.dataset.kind;

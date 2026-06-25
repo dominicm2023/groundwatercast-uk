@@ -507,6 +507,38 @@
     if (covEl) renderCoverage(covEl, meta.coverage, n);
     document.getElementById("about-attribution").textContent =
       (meta.attribution || "") + " Basemap © OpenFreeMap / OpenStreetMap contributors. Map rendering: MapLibre GL JS (BSD-3).";
+    showRunBanner(meta);
+  }
+
+  // Honest stale/failed-run banner — surfaces a too-old pack or a non-ok input
+  // straight from meta (no backend). Daily build → >36h means a run was missed.
+  const STALE_HOURS = 36;
+  function showRunBanner(meta) {
+    const el = document.getElementById("run-banner");
+    if (!el) return;
+    const msgs = [];
+    const gen = meta.generated_at ? new Date(meta.generated_at) : null;
+    if (gen && !isNaN(gen.getTime())) {
+      const ageH = (Date.now() - gen.getTime()) / 3.6e6;
+      if (ageH > STALE_HOURS) {
+        const days = Math.floor(ageH / 24);
+        const when = gen.toLocaleDateString("en-GB",
+          { day: "numeric", month: "short", year: "numeric" });
+        msgs.push(`This data may be out of date — last updated ${when}` +
+          (days >= 1 ? ` (${days} day${days > 1 ? "s" : ""} ago)` : "") +
+          ". The daily build may not have run.");
+      }
+    }
+    const ins = meta.inputs || {};
+    const bad = Object.keys(ins).filter(
+      (k) => ins[k] && ins[k].status && ins[k].status !== "ok");
+    if (bad.length) {
+      msgs.push(`Some inputs didn't update this run (${bad.join(", ")}) — ` +
+        "parts of the map may show older values.");
+    }
+    if (!msgs.length) { el.hidden = true; el.textContent = ""; return; }
+    el.textContent = "⚠ " + msgs.join("  ");
+    el.hidden = false;
   }
   const aboutEl = document.getElementById("about");
   document.getElementById("about-toggle").addEventListener("click", (e) => { e.preventDefault(); aboutEl.hidden = false; });

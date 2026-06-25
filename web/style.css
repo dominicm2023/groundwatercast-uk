@@ -193,6 +193,25 @@ body {
   background: #fff; border-radius: 5px; cursor: pointer; color: var(--text); line-height: 1.5; }
 .range-btn:hover { background: var(--bg); }
 .range-btn.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+/* stale/failed-run banner (honesty) */
+.run-banner { background: #fff8e1; color: #6b4e00; border-bottom: 1px solid #f0e0a8;
+  font-size: 0.8rem; padding: 7px 14px; text-align: center; line-height: 1.4; }
+
+/* detail: share / verify-on-source actions */
+.d-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
+.d-act-btn { font-size: 0.74rem; padding: 3px 10px; border: 1px solid var(--line);
+  border-radius: 999px; background: var(--panel); color: var(--ink); cursor: pointer;
+  text-decoration: none; line-height: 1.5; }
+.d-act-btn:hover { background: var(--bg); }
+.d-act-status { font-size: 0.72rem; color: var(--muted); }
+
+/* detail: plain-English lead */
+.plain-lang { font-size: 0.84rem; line-height: 1.5; color: var(--text);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 9px 11px; margin: 0 0 12px; }
+.pl-tag { font-weight: 600; color: var(--ink); margin-right: 4px; }
+.pl-caveat { color: var(--muted); }
 .stale-note { font-size: 0.78rem; color: #8a6d00; background: #fff8e1;
   border: 1px solid #f0e0a8; border-radius: 6px; padding: 7px 10px; margin: 0 0 8px;
   line-height: 1.4; }
