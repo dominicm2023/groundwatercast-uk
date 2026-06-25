@@ -391,9 +391,29 @@ body {
 @media (max-width: 760px) {
   #layout { flex-direction: column; }
   #detail { flex: 1 1 auto; width: auto; border-left: none;
-    border-top: 1px solid var(--line); max-height: 55vh; }
-  #map-pane { flex: 0 0 45vh; }
+    border-top: 1px solid var(--line); max-height: 58vh; }
+  #map-pane { flex: 0 0 48vh; }
   #topbar .tagline { display: none; }
+
+  /* Collapsible legend — by default it covered ~half the small map. Tap the
+     title to expand; collapsed shows only the title (+ a ▸/▾ affordance). */
+  #legend-title { cursor: pointer; user-select: none; }
+  #legend-title::after { content: " ▾"; font-size: 0.85em; color: var(--muted); }
+  #legend.legend-collapsed > :not(#legend-title) { display: none; }
+  #legend.legend-collapsed #legend-title::after { content: " ▸"; }
+
+  /* Comfortable touch targets; 16px search stops iOS zoom-on-focus. */
+  #search { font-size: 16px; padding: 9px 11px; }
+  .segmented .seg { padding: 9px 12px; font-size: 0.82rem; }
+  .range-btn { padding: 7px 13px; }
+  .d-act-btn { padding: 8px 13px; }
+  .dd-btn { padding: 7px 13px; }
+  .tl-play { width: 34px; height: 34px; font-size: 0.8rem; }
+  .about-link { padding: 6px 2px; }
+  #geology-toggle { width: 18px; height: 18px; }
+
+  /* About modal fits the small screen. */
+  .about-card { margin: 14px; max-height: 86vh; overflow-y: auto; }
 }
 
 /* ---- forecast-timeline scrubber ---- */

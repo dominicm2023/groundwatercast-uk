@@ -545,6 +545,25 @@
   document.getElementById("about-close").addEventListener("click", () => (aboutEl.hidden = true));
   aboutEl.addEventListener("click", (e) => { if (e.target === aboutEl) aboutEl.hidden = true; });
 
+  // Mobile: collapse the map legend by default (it otherwise covered ~half the
+  // small-screen map). Tap the legend title to toggle; desktop keeps it open.
+  (function legendCollapse() {
+    const lg = document.getElementById("legend");
+    const title = document.getElementById("legend-title");
+    if (!lg || !title) return;
+    const mq = window.matchMedia("(max-width: 760px)");
+    const sync = () => lg.classList.toggle("legend-collapsed", mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    title.setAttribute("role", "button");
+    title.tabIndex = 0;
+    const toggle = () => { if (mq.matches) lg.classList.toggle("legend-collapsed"); };
+    title.addEventListener("click", toggle);
+    title.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+    });
+  })();
+
   // -- helpers --------------------------------------------------------------
   function statusText(p) {
     const lab = { below: "below normal", near: "near normal", above: "above normal" }[p.status]
