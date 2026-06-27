@@ -80,6 +80,15 @@
 
   function row(k, v) { return `<div class="d-row"><span class="k">${k}</span><span class="v">${v}</span></div>`; }
 
+  // Collapsed-by-default disclosure section (mirrors the data-drawer / trust-card
+  // pattern). Used to demote the secondary panel sections below the fan chart so
+  // the summary stays scannable on first click. Returns "" for empty content.
+  function fold(title, innerHTML) {
+    if (!innerHTML) return "";
+    return `<details class="d-fold"><summary class="d-fold-sum">${esc(title)}</summary>` +
+      `<div class="d-fold-body">${innerHTML}</div></details>`;
+  }
+
   // Trend-screen stability flag (roadmap 1.1) — a "review", not "broken", badge.
   const PROV_LABEL = {
     artifact_like: "looks like a data artefact (datum / sensor drift)",
@@ -161,6 +170,9 @@
     if (dataSrc != null) dataRows += row("Source", esc(dataSrc));
     dataRows += row("Normal built from",
       nYears != null ? `${nYears} years of ${monthName(st.month)} data` : "—");
+    if (st.sgi != null && isFinite(st.sgi))
+      dataRows += row("SGI",
+        (+st.sgi).toFixed(1) === "-0.0" ? "0.0" : (+st.sgi).toFixed(1));
     const staleExplain = "A normal cadence is a roughly monthly dipped reading; " +
       "a longer gap is a telemetry outage. ‘Stale’ here means the most " +
       "recent reading is older than the usual dip interval, so the current " +
@@ -174,6 +186,14 @@
         ? "P90 proxy — not an operational threshold"
         : thSrc === "user" ? "Your threshold" : esc(thSrc || "none");
       lineageRows += row("Threshold basis", thBasis);
+      if (fc.threshold != null)
+        lineageRows += row("Threshold", `${fmt1(fc.threshold)} mAOD`);
+      if (fc.stale_days != null)
+        lineageRows += row("Seed age", `${fc.stale_days} d`);
+      // Only when the horizon genuinely exceeds 14 d (else p_breach == the
+      // 14-day breach already shown in the forecast section above).
+      if (fc.p_breach != null && fc.horizon_days > 14)
+        lineageRows += row(`Breach prob (${fc.horizon_days} d)`, pct(fc.p_breach));
     }
     const forcingNote = "Forcing: ECMWF ensemble (see About for attribution).";
 
@@ -252,18 +272,9 @@
     // -- current status vs normal --
     out.push(`<div>${statusChip(st)}</div>`);
 
-    // -- watchlist pin control (2.1). HTML here, interactive wiring post-render
-    // via GWC_WATCH.bindDetail (mirrors the bindFan/bindData split). Guarded so a
-    // missing module degrades gracefully rather than throwing in render(). --
-    if (window.GWC_WATCH && window.GWC_WATCH.pinControlHTML) {
-      out.push(window.GWC_WATCH.pinControlHTML(stn, detail));
-    }
     const obs = st.obs_date ? `observed ${prettyDate(st.obs_date)}` : "no recent observation";
-    const age = st.obs_age_days != null ? ` · ${st.obs_age_days} d old` : "";
-    // SGI: ladder-based Standardised Groundwater Index (negative = below normal).
-    const sgiTxt = (st.sgi != null && isFinite(st.sgi))
-      ? ` · SGI ${((+st.sgi).toFixed(1) === "-0.0" ? "0.0" : (+st.sgi).toFixed(1))}` : "";
-    out.push(`<p class="caption">${obs}${age}${sgiTxt} · data: ${esc(FRESH_LABEL[fr.label] || fr.label || "—")}</p>`);
+    const age = st.obs_age_days != null ? ` (${st.obs_age_days} d old)` : "";
+    out.push(`<p class="caption">${obs}${age}</p>`);
 
     // Stability flag (if the trend screen flagged this borehole for review).
     out.push(trendFlagBlock(detail.trend_flag));
@@ -279,20 +290,16 @@
     // Plain-English lead (lay audience) — deterministic, from panel values only.
     out.push(plainSentence(detail));
 
-    // ladder (needs the month's normals row)
-    const mrow = (detail.normals || []).find((r) => r.month === st.month);
-    if (mrow && st.level != null) {
-      out.push(`<div class="d-section"><h3>Current level vs normal</h3>`);
-      out.push(C.ladder(st.level, mrow, st.status || "none"));
-      out.push(`<p class="caption">Latest level ${fmt1(st.level)} mAOD against this borehole's ${monthName(st.month)} normal range.</p>`);
-      out.push(`</div>`);
-    }
-
-    // -- forecast (short-range daily fan, continued by the seasonal outlook) --
     const fc = detail.forecast;
     const hd = fc && fc.horizon_days;
     const hLabel = hd != null ? esc(hd) : "";   // real forecast horizon (days)
     const hasSeasonal = !!(detail.seasonal && detail.seasonal.months && detail.seasonal.months.length);
+    const mrow = (detail.normals || []).find((r) => r.month === st.month);
+    const se = detail.seasonal;
+
+    // -- forecast outlook FIRST: the fan chart is the lead visual (the main thing
+    // on first click). Only the three headline metrics sit under it; threshold /
+    // seed-age / long-horizon breach move into the trust card below. --
     if (fc) {
       // When the chart continues into the 6-month seasonal outlook, a bare
       // "14-day forecast" undersells it — use a span-neutral header instead.
@@ -318,32 +325,41 @@
       out.push(`<div style="margin-top:10px">`);
       out.push(row("Tier", tier));
       out.push(row("Breach prob (14 d)", pct(fc.p_breach_14d)));
-      if (fc.p_breach != null && fc.horizon_days)
-        out.push(row(`Breach prob (${fc.horizon_days} d)`, pct(fc.p_breach)));
       if (fc.first_cross_median)
         out.push(row("Median first crossing", prettyDate(fc.first_cross_median)));
-      out.push(row("Threshold", `${fmt1(fc.threshold)} mAOD <span class="caption">(${esc(srcLabel(fc.threshold_source))})</span>`));
-      out.push(row("Seed age", fc.stale_days != null ? `${fc.stale_days} d` : "–"));
       out.push(`</div></div>`);
-
-      // -- threshold ladder (2.2) — forecast-only, sits under the fan it reads.
-      // HTML here; interactive wiring post-render via GWC_LADDER.bindDetail
-      // (mirrors the watchlist pin control). Guarded so a missing module
-      // degrades gracefully rather than throwing in render(). --
-      if (window.GWC_LADDER && window.GWC_LADDER.ladderHTML) {
-        out.push(window.GWC_LADDER.ladderHTML(stn, detail));
-      }
     }
 
-    // -- seasonal outlook --
-    const se = detail.seasonal;
+    // -- current level vs normal: the main visual for status-only boreholes
+    // (shown open); a secondary disclosure when the forecast chart leads. --
+    if (mrow && st.level != null) {
+      const inner = C.ladder(st.level, mrow, st.status || "none") +
+        `<p class="caption">Latest level ${fmt1(st.level)} mAOD against this ` +
+        `borehole's ${monthName(st.month)} normal range.</p>`;
+      out.push(fc
+        ? fold("Current level vs normal", inner)
+        : `<div class="d-section"><h3>Current level vs normal</h3>${inner}</div>`);
+    }
+
+    // -- seasonal outlook (experimental) — collapsed --
     if (se && se.months && se.months.length) {
-      out.push(`<div class="d-section"><h3>Seasonal outlook (months 1–6)</h3>`);
-      out.push(C.seasonalBars(se.months));
-      out.push(`<p class="caption">P(below / near / above normal groundwater). ` +
-        `${se.seas5_weighted ? "SEAS5-weighted" : "Equal-weight"} ESP, ${se.n_traces || "–"} traces. Experimental.</p>`);
-      out.push(`</div>`);
+      const inner = C.seasonalBars(se.months) +
+        `<p class="caption">P(below / near / above normal groundwater). ` +
+        `${se.seas5_weighted ? "SEAS5-weighted" : "Equal-weight"} ESP, ` +
+        `${se.n_traces || "–"} traces. Experimental.</p>`;
+      out.push(fold("Seasonal outlook (6 months) — experimental", inner));
     }
+
+    // -- set a watch / alerts — the pin + threshold ladder, demoted to a
+    // collapsed power-tool section. Interactive wiring (GWC_WATCH.bindDetail /
+    // GWC_LADDER.bindDetail) still runs post-render; the DOM is present inside
+    // the <details>, just visually collapsed. --
+    let watchInner = "";
+    if (window.GWC_WATCH && window.GWC_WATCH.pinControlHTML)
+      watchInner += window.GWC_WATCH.pinControlHTML(stn, detail);
+    if (fc && window.GWC_LADDER && window.GWC_LADDER.ladderHTML)
+      watchInner += window.GWC_LADDER.ladderHTML(stn, detail);
+    if (watchInner) out.push(fold("Set a watch / alerts", watchInner));
 
     // -- consolidated data & downloads (1.3) — every series behind the charts
     // above, in one place rather than a drawer scattered under each chart. Each

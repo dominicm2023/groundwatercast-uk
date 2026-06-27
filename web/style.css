@@ -212,6 +212,15 @@ body {
   padding: 9px 11px; margin: 0 0 12px; }
 .pl-tag { font-weight: 600; color: var(--ink); margin-right: 4px; }
 .pl-caveat { color: var(--muted); }
+
+/* detail: collapsible secondary sections (summary-first panel) */
+.d-fold { border: 1px solid var(--line); border-radius: 8px; margin: 10px 0 0; background: var(--panel); }
+.d-fold > summary { cursor: pointer; padding: 9px 11px; font-weight: 600; color: var(--ink);
+  font-size: 0.9rem; list-style: none; }
+.d-fold > summary::-webkit-details-marker { display: none; }
+.d-fold > summary::before { content: "▸"; color: var(--muted); margin-right: 6px; font-size: 0.85em; }
+.d-fold[open] > summary::before { content: "▾"; }
+.d-fold-body { padding: 2px 11px 11px; }
 .stale-note { font-size: 0.78rem; color: #8a6d00; background: #fff8e1;
   border: 1px solid #f0e0a8; border-radius: 6px; padding: 7px 10px; margin: 0 0 8px;
   line-height: 1.4; }
