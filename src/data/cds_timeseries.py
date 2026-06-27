@@ -62,7 +62,15 @@ def _client():
     except ImportError as exc:                       # pragma: no cover
         raise ImportError("CDS fetch needs the 'cdsapi' package + a CDS API key "
                           "(~/.cdsapirc) — https://cds.climate.copernicus.eu") from exc
-    return cdsapi.Client()
+    # quiet=True mutes the per-poll INFO chatter the CDS/datastores client emits
+    # ("Request ID is…", "status updated to running/successful", the ARCO
+    # boilerplate) that otherwise floods cron_forecast.log; warnings/errors still
+    # surface. Guarded so a future cdsapi without the kwarg can't break the
+    # unattended pipeline.
+    try:
+        return cdsapi.Client(quiet=True)
+    except TypeError:
+        return cdsapi.Client()
 
 
 def _read_any_csv(target: Path, into: Path) -> pd.DataFrame:
