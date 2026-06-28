@@ -312,9 +312,6 @@
       out.push(`<p class="stale-note">⚠ Sensor may be stuck (flat readings) — the latest value has not changed and may not reflect the true level. Treat the current reading with caution.</p>`);
     }
 
-    // Plain-English lead (lay audience) — deterministic, from panel values only.
-    out.push(plainSentence(detail));
-
     const fc = detail.forecast;
     const hd = fc && fc.horizon_days;
     const hLabel = hd != null ? esc(hd) : "";   // real forecast horizon (days)
@@ -354,6 +351,11 @@
         out.push(row("Median first crossing", prettyDate(fc.first_cross_median)));
       out.push(`</div></div>`);
     }
+
+    // Plain-English summary — below the forecast outlook (the chart leads; this
+    // restates it in words). For status-only boreholes there's no forecast
+    // section above, so it simply follows the status block.
+    out.push(plainSentence(detail));
 
     // -- current level vs normal: the main visual for status-only boreholes
     // (shown open); a secondary disclosure when the forecast chart leads. --
