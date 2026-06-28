@@ -23,6 +23,7 @@
   // reads them. Safe because exactly one detail panel renders at a time — the
   // same single-panel pattern charts.js relies on for _fanCtx.
   let _meta = null;
+  let _fanRedraw = null;        // set by bindFan; lets the trigger-levels editor redraw the chart
   let _curStationName = "";
   let _datasets = {};        // kind -> {caption, cols, rows}; reset each render()
   let _sortState = {};       // kind -> {idx, dir}; reset each render()
@@ -103,6 +104,14 @@
       `data-star-id="${esc(id)}" data-star-name="${esc(stn.name || id)}" ` +
       `data-star-fc="${hasFc ? "1" : "0"}" aria-pressed="${watched ? "true" : "false"}" ` +
       `title="${esc(lbl)}" aria-label="${esc(lbl)}">${watched ? "★" : "☆"}</button>`;
+  }
+
+  // The borehole's saved trigger levels (ladder rungs) — passed to the fan chart
+  // so each draws as a line. Empty when none set or the ladder module is absent.
+  function triggerLevels(detail) {
+    const id = detail && detail.station && detail.station.station_id;
+    const L = window.GWC_LADDER;
+    return (id && L && L.rungsFor) ? L.rungsFor(id) : [];
   }
 
   // Trend-screen stability flag (roadmap 1.1) — a "review", not "broken", badge.
@@ -335,7 +344,7 @@
         `<button class="range-btn${d === range ? " active" : ""}" data-days="${d}">${l}</button>`
       ).join("");
       out.push(`<div class="fan-controls"><span class="range-label">History</span>${btns}</div>`);
-      out.push(`<div class="fan-host">${C.fanChart(detail, { historyDays: initDays })}</div>`);
+      out.push(`<div class="fan-host">${C.fanChart(detail, { historyDays: initDays, levels: triggerLevels(detail) })}</div>`);
       out.push(`<p class="caption">Observed history (dark) → ${hLabel}-day P10/P50/P90 forecast fan (blue), continuing as a monthly seasonal outlook (circles, with P10–P90 whiskers). Red dashed = breach threshold. Hover for values.</p>`);
       const tier = fc.tier ? `<span class="tier-badge tier-${esc(fc.tier)}">${TIER_LABEL[fc.tier] || fc.tier}</span>` : "–";
       out.push(`<div style="margin-top:10px">`);
@@ -366,16 +375,11 @@
       out.push(fold("Seasonal outlook (6 months) — experimental", inner));
     }
 
-    // -- set a watch / alerts — the pin + threshold ladder, demoted to a
-    // collapsed power-tool section. Interactive wiring (GWC_WATCH.bindDetail /
-    // GWC_LADDER.bindDetail) still runs post-render; the DOM is present inside
-    // the <details>, just visually collapsed. --
-    let watchInner = "";
-    if (window.GWC_WATCH && window.GWC_WATCH.pinControlHTML)
-      watchInner += window.GWC_WATCH.pinControlHTML(stn, detail);
+    // -- set your own trigger levels — the ladder (named mAOD levels). Each level
+    // now draws a line on the fan chart above (live as you edit) and is read
+    // qualitatively against the fan. Forecast-only; the name-☆ owns watching. --
     if (fc && window.GWC_LADDER && window.GWC_LADDER.ladderHTML)
-      watchInner += window.GWC_LADDER.ladderHTML(stn, detail);
-    if (watchInner) out.push(fold("Set a watch / alerts", watchInner));
+      out.push(fold("Set your own trigger levels", window.GWC_LADDER.ladderHTML(stn, detail)));
 
     // -- consolidated data & downloads (1.3) — every series behind the charts
     // above, in one place rather than a drawer scattered under each chart. Each
@@ -720,8 +724,13 @@
     const C = window.GWC_CHARTS;
     const host = container.querySelector(".fan-host");
     if (!host) return;
+    const initBtn = container.querySelector(".range-btn.active");
+    let activeDays = initBtn
+      ? (initBtn.dataset.days === "all" ? 1e9 : parseInt(initBtn.dataset.days, 10))
+      : 365;
     function draw(days) {
-      host.innerHTML = C.fanChart(detail, { historyDays: days });
+      activeDays = days;
+      host.innerHTML = C.fanChart(detail, { historyDays: days, levels: triggerLevels(detail) });
       const svg = host.querySelector(".svg-fan");
       if (svg) C.attachFanHover(svg);
     }
@@ -737,7 +746,13 @@
     // the 1y view is already in the initial HTML — just attach hover to it
     const svg = host.querySelector(".svg-fan");
     if (svg) C.attachFanHover(svg);
+    // Expose a levels-aware redraw so the trigger-levels editor (ladders.js) can
+    // move the lines on the chart live as rungs change. Keeps the active range.
+    _fanRedraw = () => draw(activeDays);
   }
 
-  window.GWC_DETAIL = { render, bindFan, bindData };
+  window.GWC_DETAIL = {
+    render, bindFan, bindData,
+    refreshFanLevels: () => { if (_fanRedraw) _fanRedraw(); },
+  };
 })();

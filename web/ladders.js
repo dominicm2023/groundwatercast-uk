@@ -1,4 +1,5 @@
-// Threshold ladders — roadmap 2.2 (client-only, qualitative).
+// Threshold ladders — roadmap 2.2 (client-only, qualitative). See
+// docs/product/threshold_ladders_design.md.
 //
 // A per-borehole ordered, operationally-named ladder (drought-permit /
 // hands-off-flow / abstraction-cessation / asset-flood …). Each rung shows its
@@ -87,6 +88,9 @@
     }
     save(arr);
     refresh();
+    // Move the lines on the fan chart live as rungs change (when a panel is open).
+    if (window.GWC_DETAIL && window.GWC_DETAIL.refreshFanLevels)
+      window.GWC_DETAIL.refreshFanLevels();
   }
   function addRung(id, name, rung) {
     if (!isValidRung(rung)) return;
@@ -149,13 +153,12 @@
     const id = stn && stn.station_id;
     if (!id) return "";
     const name = (stn && stn.name) || id;
-    return `<div class="d-section ladder-sec" data-ld-id="${esc(id)}" data-ld-name="${esc(name)}">` +
-      `<h3>Threshold ladder</h3>` +
+    return `<div class="ladder-sec" data-ld-id="${esc(id)}" data-ld-name="${esc(name)}">` +
       `<p class="caption ld-indicative">${esc(INDICATIVE_LADDER)}</p>` +
       `<div class="ld-root">` +
         `<div class="ld-readout">${readoutHTML(id, detail)}</div>` +
         `<div class="ld-actions">` +
-          `<button type="button" class="ld-toggle" data-ld-act="toggle-editor">Add / edit rungs</button>` +
+          `<button type="button" class="ld-toggle" data-ld-act="toggle-editor">Add / edit levels</button>` +
         `</div>` +
         `<div class="ld-editor" hidden></div>` +
         (_lsOk ? "" :
@@ -175,7 +178,7 @@
   function readoutHTML(id, detail) {
     const rungs = rungsFor(id);
     if (!rungs.length) {
-      return `<p class="caption ld-empty">No rungs yet — add operational levels ` +
+      return `<p class="caption ld-empty">No levels yet — add operational levels ` +
         `(drought-permit, hands-off-flow, abstraction-cessation, asset-flood…).</p>`;
     }
     const sorted = rungs.slice().sort((a, b) => b.level_mAOD - a.level_mAOD);
@@ -230,7 +233,7 @@
         `<input type="text" class="ld-new-label" placeholder="Rung name (e.g. Drought permit)" aria-label="New rung name">` +
         `<input type="number" class="ld-new-level" step="0.01" placeholder="mAOD" aria-label="New rung level (mAOD)"> mAOD` +
         `<select class="ld-new-dir" aria-label="New rung direction">${dirOpts("below")}</select>` +
-        `<button type="button" class="ld-add" data-ld-act="add-rung">Add rung</button>` +
+        `<button type="button" class="ld-add" data-ld-act="add-rung">Add level</button>` +
         `<p class="ld-sanity ld-new-sanity caption" role="status" aria-live="polite"></p>` +
       `</div>`;
 
@@ -332,7 +335,7 @@
           btn.textContent = "Close editor";
         } else {
           ed.hidden = true;
-          btn.textContent = "Add / edit rungs";
+          btn.textContent = "Add / edit levels";
         }
       } else if (act === "add-rung") {
         const row = btn.closest(".ld-r-new");

@@ -69,6 +69,11 @@
     });
     const thr = detail.forecast && detail.forecast.threshold;
     if (thr != null) ysAll.push(thr);
+    // User-set trigger levels (the ladder) — included so the chart auto-scales
+    // to fit them, then drawn below.
+    const levels = Array.isArray(opts.levels)
+      ? opts.levels.filter((l) => l && isFinite(+l.level_mAOD)) : [];
+    levels.forEach((l) => ysAll.push(+l.level_mAOD));
     const [ylo, yhi] = yRange(ysAll);
     const Y = (v) => m.t + (1 - (v - ylo) / (yhi - ylo || 1)) * ih;
 
@@ -179,6 +184,14 @@
       parts.push(`<line x1="${m.l}" y1="${y}" x2="${m.l + iw}" y2="${y}" stroke="#c0392b" stroke-width="1" stroke-dasharray="4 3"/>`);
       parts.push(`<text x="${m.l + iw}" y="${y - 3}" text-anchor="end" font-size="8.5" fill="#c0392b">threshold ${fmt1(thr)}</text>`);
     }
+
+    // User trigger levels (the ladder) — distinct purple dashed lines, labelled
+    // on the LEFT so they never collide with the red published-threshold label.
+    levels.forEach((l) => {
+      const y = Math.max(m.t, Math.min(m.t + ih, Y(+l.level_mAOD)));
+      parts.push(`<line x1="${m.l}" y1="${y.toFixed(1)}" x2="${m.l + iw}" y2="${y.toFixed(1)}" stroke="#6a3d9a" stroke-width="1" stroke-dasharray="2 2"/>`);
+      parts.push(`<text x="${m.l + 2}" y="${(y - 3).toFixed(1)}" text-anchor="start" font-size="8" fill="#5b2d86">${esc(l.label)} ${fmt1(+l.level_mAOD)}</text>`);
+    });
 
     // x labels (year-aware — the window can span several years)
     const lab = (t, anchor) =>
