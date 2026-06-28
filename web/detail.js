@@ -89,6 +89,22 @@
       `<div class="d-fold-body">${innerHTML}</div></details>`;
   }
 
+  // Quick-watch ☆ shown next to the borehole name (the full rule editor lives in
+  // the "Set a watch / alerts" fold). Toggling either keeps both in sync via
+  // GWC_WATCH.refreshPinControl. Reflects the current watched state at render.
+  function starBtn(stn, detail) {
+    const id = stn && stn.station_id;
+    if (!id) return "";
+    const W = window.GWC_WATCH;
+    const watched = !!(W && W.has && W.has(id));
+    const hasFc = !!(detail && detail.forecast);
+    const lbl = watched ? "Watching this borehole — click to remove" : "Watch this borehole";
+    return `<button type="button" class="d-star${watched ? " on" : ""}" ` +
+      `data-star-id="${esc(id)}" data-star-name="${esc(stn.name || id)}" ` +
+      `data-star-fc="${hasFc ? "1" : "0"}" aria-pressed="${watched ? "true" : "false"}" ` +
+      `title="${esc(lbl)}" aria-label="${esc(lbl)}">${watched ? "★" : "☆"}</button>`;
+  }
+
   // Trend-screen stability flag (roadmap 1.1) — a "review", not "broken", badge.
   const PROV_LABEL = {
     artifact_like: "looks like a data artefact (datum / sensor drift)",
@@ -253,7 +269,7 @@
     const fr = detail.freshness || {};
     const out = [];
 
-    out.push(`<h2 class="d-name">${esc(stn.name || stn.station_id)}</h2>`);
+    out.push(`<div class="d-head"><h2 class="d-name">${esc(stn.name || stn.station_id)}</h2>${starBtn(stn, detail)}</div>`);
     out.push(`<p class="d-sub">${esc(stn.aquifer || "—")} · ${fmt1(stn.lat)}°N ${fmt1(stn.lon)}°E</p>`);
 
     // Share + verify-on-source actions. station_id IS the EA hydrology GUID, so
@@ -657,6 +673,16 @@
       if (linkBtn) {
         const status = linkBtn.parentElement.querySelector(".d-act-status");
         copyText(location.href, status);
+        return;
+      }
+      // Quick-watch ☆ next to the name. Toggle via the watchlist API; its
+      // refreshAll → refreshPinControl re-syncs both the ☆ and the fold pin.
+      const star = ev.target.closest(".d-star");
+      if (star && window.GWC_WATCH && window.GWC_WATCH.toggle) {
+        const def = star.dataset.starFc === "1"
+          ? { type: "breach", prob_pct: 25 }
+          : { type: "status", crosses: "below" };
+        window.GWC_WATCH.toggle(star.dataset.starId, star.dataset.starName, def);
         return;
       }
       const sortBtn = ev.target.closest(".dd-sort");

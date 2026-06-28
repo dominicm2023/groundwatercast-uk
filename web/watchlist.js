@@ -1,4 +1,4 @@
-// Watchlist — roadmap 2.1, Stage A (client-only).
+// Watchlist — roadmap 2.1, Stage A (client-only). See docs/product/watchlist_design.md.
 //
 // One cohesive module exposing window.GWC_WATCH, consumed by both the detail-panel
 // pin control (detail.js render() + app.js bindDetail hook) and the controls-column
@@ -479,6 +479,17 @@
   // Re-render the pin control in place after a store mutation (so ★/☆ + label
   // reflect state without a full panel re-render).
   function refreshPinControl() {
+    // Quick-watch ☆ by the name (detail.js) — sync first, independent of the
+    // pin control (the ☆ exists even when the watch fold is collapsed).
+    const star = document.querySelector("#detail-body .d-star");
+    if (star) {
+      const sw = has(star.dataset.starId);
+      star.textContent = sw ? "★" : "☆";
+      star.classList.toggle("on", sw);
+      star.setAttribute("aria-pressed", sw ? "true" : "false");
+      const lbl = sw ? "Watching this borehole — click to remove" : "Watch this borehole";
+      star.title = lbl; star.setAttribute("aria-label", lbl);
+    }
     const pinEl = document.querySelector("#detail-body .wl-pin");
     if (!pinEl) return;
     const id = pinEl.dataset.wlId;
