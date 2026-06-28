@@ -519,6 +519,56 @@
     return (window.GWC_getDetail && window.GWC_getDetail(id)) || null;
   }
 
+  // Detail JSON (the fan) for a watched borehole — the app cache if it's been
+  // opened this session, else a one-shot fetch that re-renders the panel when it
+  // lands. Needed so the watchlist can read your custom trigger levels (which
+  // need the fan), not just the flat published props. Attempted once per id.
+  const _wlDetail = {};
+  function detailFor(id) {
+    const app = getCachedDetail(id);
+    if (app) return app;
+    if (id in _wlDetail) return _wlDetail[id] === "pending" ? null : _wlDetail[id];
+    _wlDetail[id] = "pending";
+    const base = (window.GWC_CONFIG && window.GWC_CONFIG.packBase) || "/pack";
+    fetch(base + "/stations/" + encodeURIComponent(id) + ".json")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { _wlDetail[id] = d || null; renderPanel(); })
+      .catch(() => { _wlDetail[id] = null; });
+    return null;
+  }
+
+  // Standing of a watched borehole under the unified model: read against YOUR
+  // trigger levels (ladder) if you've set any — the worst of them (likely >
+  // possible > unlikely), tripped when 'likely' — otherwise against the published
+  // threshold (the stored default rule). A custom level is only ever read
+  // qualitatively from the fan, mirroring the detail panel's honesty.
+  const _WORD_RANK = { likely: 3, possible: 2, unlikely: 1 };
+  function levelStanding(entry, props) {
+    const levels = (window.GWC_LADDER && window.GWC_LADDER.rungsFor)
+      ? window.GWC_LADDER.rungsFor(entry.id) : [];
+    if (!levels.length) {
+      const ev = evaluate(entry.rule, props); ev.mode = "published"; return ev;
+    }
+    const detail = detailFor(entry.id);
+    if (!detail) {
+      const ev = evaluate(entry.rule, props);
+      ev.mode = "loading"; ev.nLevels = levels.length; return ev;
+    }
+    let worst = null, worstL = null;
+    for (const l of levels) {
+      const r = evaluateFloor({ type: "breach", floor_mAOD: l.level_mAOD, dir: l.dir }, detail);
+      if (r && (!worst || _WORD_RANK[r.word] > _WORD_RANK[worst.word])) { worst = r; worstL = l; }
+    }
+    if (!worst) { const ev = evaluate(entry.rule, props); ev.mode = "published"; return ev; }
+    return {
+      tripped: worst.word === "likely",
+      isProxy: props.threshold_source === "gw_p90_proxy",
+      standing: `${worstL.label} (${fmt1(worstL.level_mAOD)} mAOD): ${worst.word} to be reached in 14 d`,
+      label: `Your trigger level “${worstL.label}” (${fmt1(worstL.level_mAOD)} mAOD) is ${worst.word} to be reached within 14 days — indicative, from the fan.`,
+      mode: "levels", nLevels: levels.length, word: worst.word,
+    };
+  }
+
   // ============================================================================
   // CONTROLS-COLUMN PANEL
   // ============================================================================
@@ -534,7 +584,7 @@
       const feat = window.GWC_getFeature ? window.GWC_getFeature(e.id) : null;
       const props = (feat && feat.properties) || {};
       const name = (props.name || e.name || e.id);
-      const ev = evaluate(e.rule, props);
+      const ev = levelStanding(e, props);
       return { entry: e, name: name, props: props, ev: ev, missing: !feat };
     });
     rows.sort((a, b) => {
@@ -578,11 +628,14 @@
       : `<span class="wl-badge ok">watching</span>`;
     const missing = r.missing
       ? `<span class="wl-badge gone">not in this pack</span>` : "";
-    // floor note: the panel has no detail JSON, so for a floor rule it points the
-    // user to the borehole for the indicative fan read (never fabricated here).
-    const floorHint = (r.entry.rule.type === "breach" && r.entry.rule.floor_mAOD != null)
-      ? `<span class="wl-floor-hint caption">Custom floor — open this borehole for the indicative fan read.</span>`
-      : "";
+    // What this Watch reads against (unified model): your trigger levels if set,
+    // otherwise the published threshold.
+    const n = ev.nLevels;
+    const modeTxt = ev.mode === "levels"
+      ? `Watching your ${n} trigger level${n === 1 ? "" : "s"} (worst shown)`
+      : ev.mode === "loading"
+        ? `Watching your ${n} trigger level${n === 1 ? "" : "s"} — reading the fan…`
+        : `Watching the published threshold (14-day breach)`;
     let alert = "";
     if (ev.tripped) {
       const txt = alertText(r.name, ev, null);
@@ -596,8 +649,7 @@
         `${badge}${missing}` +
       `</div>` +
       `<div class="wl-standing caption">${esc(ev.label)}</div>` +
-      `<div class="wl-rule caption">Watch: ${esc(ruleSummary(r.entry.rule))}</div>` +
-      floorHint +
+      `<div class="wl-rule caption">${esc(modeTxt)}</div>` +
       alert +
       `<button type="button" class="wl-row-remove" data-wl-remove="${esc(r.entry.id)}" ` +
         `aria-label="Remove ${esc(r.name)} from watchlist">Remove</button>` +

@@ -88,9 +88,12 @@
     }
     save(arr);
     refresh();
-    // Move the lines on the fan chart live as rungs change (when a panel is open).
+    // Move the lines on the fan chart live as levels change (when a panel is open)
+    // and refresh the watchlist (its standing now reads your trigger levels).
     if (window.GWC_DETAIL && window.GWC_DETAIL.refreshFanLevels)
       window.GWC_DETAIL.refreshFanLevels();
+    if (window.GWC_WATCH && window.GWC_WATCH.renderPanel)
+      window.GWC_WATCH.renderPanel();
   }
   function addRung(id, name, rung) {
     if (!isValidRung(rung)) return;
@@ -446,7 +449,7 @@
   // ---- public API ------------------------------------------------------------
   window.GWC_LADDER = {
     load: load, save: save,
-    getLadder: getLadder, setRungs: setRungs,
+    getLadder: getLadder, rungsFor: rungsFor, setRungs: setRungs,
     addRung: addRung, updateRung: updateRung, removeRung: removeRung,
     ladderHTML: ladderHTML, bindDetail: bindDetail,
     exportString: exportString, importString: importString,
