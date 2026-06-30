@@ -137,13 +137,17 @@
     const W = window.GWC_WATCH;
     const sanity = (W && W.datumSanity)
       ? W.datumSanity(rung.level_mAOD, detail) : { ok: true, msg: "" };
-    let read = null;
+    let read = null, seasonal = null;
     if (W && W.evaluateFloor) {
       read = W.evaluateFloor(
         { type: "breach", prob_pct: 1, floor_mAOD: rung.level_mAOD, dir: rung.dir },
         detail);
     }
-    return { read: read, sanity: sanity };   // read may be null → "no fan read"
+    if (W && W.evaluateFloorSeasonal) {
+      seasonal = W.evaluateFloorSeasonal(
+        { type: "breach", floor_mAOD: rung.level_mAOD, dir: rung.dir }, detail);
+    }
+    return { read: read, sanity: sanity, seasonal: seasonal };   // read may be null → "no fan read"
   }
 
   // ---- HTML blocks -----------------------------------------------------------
@@ -186,20 +190,24 @@
     }
     const sorted = rungs.slice().sort((a, b) => b.level_mAOD - a.level_mAOD);
     const rows = sorted.map((rung) => {
-      const { read, sanity } = rungStanding(rung, detail);
+      const { read, sanity, seasonal } = rungStanding(rung, detail);
       const dirWord = rung.dir === "above" ? "ceiling" : "floor";
       let word, cls;
       if (!read) { word = "no fan read"; cls = "ld-none"; }
       else { word = read.word; cls = "ld-" + read.word; }
       const sanityFlag = sanity.ok ? "" :
         `<p class="caption ld-bad ld-sanity">${esc(sanity.msg)}</p>`;
+      const seasonalLine = (seasonal && seasonal.summary)
+        ? `<div class="ld-rung-seasonal caption">Beyond 14 days (experimental seasonal): ${esc(seasonal.summary)}</div>`
+        : "";
       return `<div class="ld-rung">` +
         `<div class="ld-rung-head">` +
           `<span class="ld-rung-label">${esc(rung.label)}</span>` +
-          `<span class="ld-badge ${cls}">${esc(word)}</span>` +
+          `<span class="ld-badge ${cls}">${esc(word)} <span class="ld-badge-h">14 d</span></span>` +
         `</div>` +
         `<div class="ld-rung-meta caption">${fmt1(rung.level_mAOD)} mAOD · ${esc(dirWord)}</div>` +
         `<div class="ld-rung-caveat caption">${esc(RUNG_CAVEAT)}</div>` +
+        seasonalLine +
         sanityFlag +
       `</div>`;
     }).join("");

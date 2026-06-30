@@ -202,6 +202,45 @@
     };
   }
 
+  // ---- seasonal extension of the floor read (months 1–6) ---------------------
+  // Per-month likely/possible/unlikely against each seasonal month's published
+  // P10–P90 envelope, plus a plain "when it escalates" summary. QUALITATIVE ONLY,
+  // and per-month — never a cumulative product (the months are correlated and we
+  // only hold quantiles, not the ESP traces). The seasonal outlook is
+  // experimental, so callers must badge it as such.
+  function evaluateFloorSeasonal(rule, detail) {
+    if (!rule || rule.type !== "breach" || rule.floor_mAOD == null) return null;
+    const months = detail && detail.seasonal && detail.seasonal.months;
+    if (!Array.isArray(months) || !months.length) return null;
+    const dir = rule.dir === "above" ? "above" : "below";
+    const floor = +rule.floor_mAOD;
+    const rows = months.map((m) => {
+      const lo = m.gw_p10, hi = m.gw_p90;
+      let word = null;
+      if (lo != null && hi != null && !isNaN(lo) && !isNaN(hi)) {
+        word = dir === "below"
+          ? (floor >= hi ? "likely" : floor <= lo ? "unlikely" : "possible")
+          : (floor <= lo ? "likely" : floor >= hi ? "unlikely" : "possible");
+      }
+      return { month_ahead: m.month_ahead, month_start: m.month_start, word: word };
+    });
+    const valid = rows.filter((r) => r.word);
+    if (!valid.length) return { rows: rows, summary: "" };
+    const firstLikely = valid.find((r) => r.word === "likely");
+    const firstPossible = valid.find((r) => r.word === "possible" || r.word === "likely");
+    let summary;
+    if (firstLikely) {
+      summary = (firstPossible && firstPossible.month_ahead < firstLikely.month_ahead)
+        ? `possible from ~month ${firstPossible.month_ahead}, likely from ~month ${firstLikely.month_ahead}`
+        : `likely from ~month ${firstLikely.month_ahead}`;
+    } else if (firstPossible) {
+      summary = `possible from ~month ${firstPossible.month_ahead} (not likely within 6 months)`;
+    } else {
+      summary = "stays unlikely through the 6-month outlook";
+    }
+    return { rows: rows, summary: summary };
+  }
+
   // ---- datum-sanity on a user mAOD floor (needs observed.series + normals) ----
   function datumSanity(floor, detail) {
     const f = +floor;
@@ -750,7 +789,8 @@
     load: load, save: save, has: has, get: get,
     add: add, remove: remove, toggle: toggle,
     // pure evaluator + qualitative reads
-    evaluate: evaluate, evaluateFloor: evaluateFloor, datumSanity: datumSanity,
+    evaluate: evaluate, evaluateFloor: evaluateFloor,
+    evaluateFloorSeasonal: evaluateFloorSeasonal, datumSanity: datumSanity,
     // pin control
     pinControlHTML: pinControlHTML,
     bindDetail: function (bodyEl, detail, feature) {

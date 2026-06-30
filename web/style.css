@@ -230,6 +230,10 @@ body {
   margin-top: 2px; }
 .d-star:hover { background: var(--bg); color: #b88600; }
 .d-star.on { color: #e0a500; }
+
+/* trigger-level seasonal trajectory + the 14-day badge qualifier */
+.ld-rung-seasonal { color: #5b2d86; margin-top: 2px; }
+.ld-badge-h { font-weight: 400; opacity: 0.8; font-size: 0.85em; }
 .stale-note { font-size: 0.78rem; color: #8a6d00; background: #fff8e1;
   border: 1px solid #f0e0a8; border-radius: 6px; padding: 7px 10px; margin: 0 0 8px;
   line-height: 1.4; }

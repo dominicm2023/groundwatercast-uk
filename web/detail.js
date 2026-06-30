@@ -370,7 +370,18 @@
 
     // -- seasonal outlook (experimental) — collapsed --
     if (se && se.months && se.months.length) {
-      const inner = C.seasonalBars(se.months) +
+      // Seasonal threshold-crossing read (Option A): extend the published
+      // threshold's crossing past day-14, qualitatively, from the monthly
+      // envelopes. Experimental; the published breach is an "above" crossing.
+      let thrSeasonal = "";
+      if (fc && fc.threshold != null && window.GWC_WATCH && window.GWC_WATCH.evaluateFloorSeasonal) {
+        const sres = window.GWC_WATCH.evaluateFloorSeasonal(
+          { type: "breach", floor_mAOD: fc.threshold, dir: "above" }, detail);
+        if (sres && sres.summary)
+          thrSeasonal = `<p class="caption">Threshold (${fmt1(fc.threshold)} mAOD) over the season: ` +
+            `<b>${esc(sres.summary)}</b> — indicative, from the experimental outlook (not the 14-day fan).</p>`;
+      }
+      const inner = C.seasonalBars(se.months) + thrSeasonal +
         `<p class="caption">P(below / near / above normal groundwater). ` +
         `${se.seas5_weighted ? "SEAS5-weighted" : "Equal-weight"} ESP, ` +
         `${se.n_traces || "–"} traces. Experimental.</p>`;
