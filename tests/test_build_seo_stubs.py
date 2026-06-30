@@ -76,9 +76,23 @@ def test_build_smoke(tmp_path):
     bare = {"station": {"station_id": "deadbeef-0000", "name": "Empty BH",
                         "lat": 52.0, "lon": -1.0}, "observed": {"series": []}}
     (pack / "b.json").write_text(json.dumps(bare), encoding="utf-8")
-    out = tmp_path / "b"
-    stats = B.build(pack, out)            # raises on any self-check failure
+    web = tmp_path / "web"
+    out = web / "b"
+    store = tmp_path / "lastmod.json"
+    stats = B.build(pack, out, today="2026-06-30", lastmod_store=store)   # raises on self-check failure
     assert stats["stubs"] == 2
     assert stats["noindex"] == 1          # the empty borehole
     assert (out / "wilgate-green" / "index.html").exists()
     assert (out / "empty-bh" / "index.html").exists()
+    # browse + sitemap + robots
+    browse = (web / "browse" / "index.html").read_text(encoding="utf-8")
+    assert "Browse boreholes" in browse and "/b/wilgate-green/" in browse
+    sm = (web / "sitemap.xml").read_text(encoding="utf-8")
+    assert "<loc>https://groundwatercast.com/b/wilgate-green/</loc>" in sm
+    assert "/b/empty-bh/" not in sm       # noindex page excluded from sitemap
+    assert stats["sitemap_urls"] == 3     # home + browse + wilgate-green
+    assert "Sitemap: https://groundwatercast.com/sitemap.xml" in (web / "robots.txt").read_text()
+    # lastmod anti-churn: a second build with unchanged content keeps the same lastmod
+    B.build(pack, out, today="2026-07-05", lastmod_store=store)
+    sm2 = (web / "sitemap.xml").read_text(encoding="utf-8")
+    assert "<lastmod>2026-06-30</lastmod>" in sm2   # carried forward, not bumped to 07-05

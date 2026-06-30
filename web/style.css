@@ -205,6 +205,8 @@ body {
   text-decoration: none; line-height: 1.5; }
 .d-act-btn:hover { background: var(--bg); }
 .d-act-status { font-size: 0.72rem; color: var(--muted); }
+.d-act-btn.d-act-primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+.d-act-btn.d-act-primary:hover { background: #234b71; }
 
 /* detail: plain-English lead */
 .plain-lang { font-size: 0.84rem; line-height: 1.5; color: var(--text);

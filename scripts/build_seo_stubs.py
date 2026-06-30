@@ -17,9 +17,11 @@ wired into run_chain; run directly:  python scripts/build_seo_stubs.py
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sys
+from datetime import date
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +34,10 @@ SITE = "https://groundwatercast.com"
 OGL = "http://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/"
 PACK_DIR = _ROOT / "outputs" / "pack" / "stations"
 OUT_DIR = _ROOT / "web" / "b"
+BROWSE_DIR = _ROOT / "web" / "browse"
+SITEMAP_PATH = _ROOT / "web" / "sitemap.xml"
+ROBOTS_PATH = _ROOT / "web" / "robots.txt"
+LASTMOD_STORE = _ROOT / "outputs" / "seo_lastmod.json"   # {slug: {hash, lastmod}} — anti-churn
 CAVEAT = "Indicative, experimental — not a flood or drought warning. England only."
 _REQUIRED_TYPES = {"WebSite", "WebPage", "Dataset", "Place"}
 
@@ -255,16 +261,77 @@ def _check(html, sl, problems):
         problems.append(f"{sl}: JSON-LD missing types {_REQUIRED_TYPES - types}")
 
 
-def build(pack_dir: Path = PACK_DIR, out_dir: Path = OUT_DIR) -> dict:
+def _mini_shell(title, canonical, body):
+    return (
+        '<!DOCTYPE html><html lang="en-GB"><head>'
+        '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+        f'<title>{esc(title)}</title>'
+        f'<link rel="canonical" href="{canonical}">'
+        '<meta name="robots" content="index,follow"><meta name="theme-color" content="#1a3a5c">'
+        '<link rel="icon" type="image/svg+xml" href="/favicon.svg">'
+        '<link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/borehole.css">'
+        '</head><body>'
+        '<header class="bore-top"><a class="bore-brand" href="/"><span class="bore-logo">💧</span> '
+        'GroundwaterCast&nbsp;UK</a><nav><a href="/">Explorer</a> <a href="/browse/">Browse</a> '
+        '<a href="/about/">About</a></nav></header>'
+        f'<div class="bore-wrap">{body}</div>'
+        '<footer class="bore-foot"><p class="disclaimer"><b>Indicative, uncalibrated research '
+        'forecast.</b> Not a flood or drought warning. England-only. Independent open-source '
+        'project — not affiliated with or endorsed by any employer.</p></footer></body></html>'
+    )
+
+
+def _browse_html(entries):
+    """entries: list of (slug, name, region). A crawlable, county-grouped directory."""
+    by_region: dict[str, list] = {}
+    for sl, name, region in entries:
+        by_region.setdefault(region or "Other", []).append((sl, name))
+    parts = ['<h1 class="bore-h1">Browse boreholes</h1>',
+             f'<p class="bore-sub">All {len(entries)} monitored boreholes with a forecast page, '
+             'by ceremonial county.</p>',
+             f'<p class="bore-caveat">⚠ {esc(CAVEAT)}</p>']
+    for region in sorted(by_region):
+        parts.append(f'<h2 class="bore-browse-h">{esc(region)} '
+                     f'<span class="caption">({len(by_region[region])})</span></h2>'
+                     '<ul class="bore-browse-list">')
+        for sl, name in sorted(by_region[region], key=lambda x: (x[1] or "").lower()):
+            parts.append(f'<li><a href="/b/{esc(sl)}/">{esc(name)}</a></li>')
+        parts.append("</ul>")
+    return _mini_shell("Browse boreholes — GroundwaterCast UK", f"{SITE}/browse/", "".join(parts))
+
+
+def _sitemap_xml(urls):
+    rows = "".join(f"<url><loc>{loc}</loc><lastmod>{lm}</lastmod></url>" for loc, lm in urls)
+    return ('<?xml version="1.0" encoding="UTF-8"?>'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + rows + "</urlset>")
+
+
+def build(pack_dir: Path = PACK_DIR, out_dir: Path = OUT_DIR, today: str | None = None,
+          lastmod_store: Path = LASTMOD_STORE) -> dict:
+    today = today or date.today().isoformat()
     out_dir.mkdir(parents=True, exist_ok=True)
+    web_dir = out_dir.parent
+    browse_dir = web_dir / "browse"
+    sitemap_path = web_dir / "sitemap.xml"
+    robots_path = web_dir / "robots.txt"
+    store = {}
+    if lastmod_store.exists():
+        try:
+            store = json.loads(lastmod_store.read_text(encoding="utf-8"))
+        except Exception:
+            store = {}
+    new_store: dict[str, dict] = {}
     seen: dict[str, str] = {}
+    entries: list[tuple] = []                                  # (slug, name, region)
+    urls = [(f"{SITE}/", today), (f"{SITE}/browse/", today)]   # home + directory
     n = noindex = noregion = 0
     problems: list[str] = []
     for fp in sorted(pack_dir.glob("*.json")):   # sorted → deterministic slug collisions
         d = json.loads(fp.read_text(encoding="utf-8"))
         stn = d.get("station") or {}
         sid = stn.get("station_id")
-        sl = slug(stn.get("name") or sid)
+        name = stn.get("name") or sid
+        sl = slug(name)
         if sl in seen and seen[sl] != sid:
             sl = f"{sl}-{str(sid)[:6]}"
         seen[sl] = sid
@@ -280,12 +347,29 @@ def build(pack_dir: Path = PACK_DIR, out_dir: Path = OUT_DIR) -> dict:
         dst.mkdir(parents=True, exist_ok=True)
         (dst / "index.html").write_text(html, encoding="utf-8")
         n += 1
-    print(f"wrote {n} stubs -> {out_dir}  (noindex {noindex}, no-region {noregion})")
+        entries.append((sl, name, region))
+        # lastmod anti-churn: bump only when the page's indexable content changed
+        h = hashlib.sha256(html.encode("utf-8")).hexdigest()
+        prev = store.get(sl)
+        lm = prev["lastmod"] if (prev and prev.get("hash") == h) else today
+        new_store[sl] = {"hash": h, "lastmod": lm}
+        if indexable:                                            # don't sitemap noindex pages
+            urls.append((f"{SITE}/b/{sl}/", lm))
+
+    browse_dir.mkdir(parents=True, exist_ok=True)
+    (browse_dir / "index.html").write_text(_browse_html(entries), encoding="utf-8")
+    sitemap_path.write_text(_sitemap_xml(urls), encoding="utf-8")
+    robots_path.write_text(f"User-agent: *\nAllow: /\nSitemap: {SITE}/sitemap.xml\n", encoding="utf-8")
+    lastmod_store.parent.mkdir(parents=True, exist_ok=True)
+    lastmod_store.write_text(json.dumps(new_store), encoding="utf-8")
+
+    print(f"wrote {n} stubs + /browse + sitemap ({len(urls)} urls) + robots  "
+          f"(noindex {noindex}, no-region {noregion})")
     if problems:
         for p in problems[:25]:
             print("  FAIL:", p)
         raise SystemExit(f"{len(problems)} stub self-check failure(s)")
-    return {"stubs": n, "noindex": noindex, "noregion": noregion}
+    return {"stubs": n, "noindex": noindex, "noregion": noregion, "sitemap_urls": len(urls)}
 
 
 if __name__ == "__main__":

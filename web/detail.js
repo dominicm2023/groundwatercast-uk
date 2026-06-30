@@ -285,7 +285,13 @@
     // the official record is a direct client-side URL ("where's the real
     // data?"); Copy link makes the existing #bh deep-link shareable.
     if (stn.station_id) {
+      // "Open full page" links to the static per-borehole page (/b/<slug>/) — shown
+      // in the map side panel, hidden when we're already on that page.
+      const onBoreholePage = location.pathname.indexOf("/b/") === 0;
+      const fullPage = onBoreholePage ? "" :
+        `<a class="d-act-btn d-act-primary" href="/b/${slug(stn.name || stn.station_id)}/">Open full page ↗</a>`;
       out.push(`<div class="d-actions">` +
+        fullPage +
         `<button type="button" class="d-act-btn d-copy-link">🔗 Copy link</button>` +
         `<a class="d-act-btn" target="_blank" rel="noopener" ` +
           `href="https://environment.data.gov.uk/hydrology/station/${encodeURIComponent(stn.station_id)}">` +

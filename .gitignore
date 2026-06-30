@@ -53,6 +53,10 @@ data/processed/
 data/model/
 models/
 outputs/
+web/b/
+web/browse/
+web/sitemap.xml
+web/robots.txt
 
 # ---------------------------------------------------------------------
 # ...except the committed inputs that live alongside derived outputs
@@ -87,6 +91,3 @@ notebooks/scratch/
 # =====================================================================
 _paper_extract.txt
 docs/dataflow_diagram.pdf
-
-# Phase-2 per-borehole stubs (rebuildable)
-web/b/

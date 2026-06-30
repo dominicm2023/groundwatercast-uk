@@ -162,7 +162,14 @@ STAGES = (
     #    outputs (cron: `run_chain --forecast --publish`).
     Stage("build_artifact_pack", "10",
           ("-m", "scripts.build_artifact_pack"), "publish", MAIN_ENV,
-          "assemble outputs/pack (geojson + per-station JSON) from existing artefacts; pure-read, LAST"),
+          "assemble outputs/pack (geojson + per-station JSON) from existing artefacts; pure-read"),
+
+    # -- SEO stubs [step 11]: per-borehole static pages + /browse + sitemap +
+    #    robots, from the pack. Pure read; runs LAST so a stub issue can't undo
+    #    the already-written pack (the chain aborts after it, not before).
+    Stage("build_seo_stubs", "11",
+          ("-m", "scripts.build_seo_stubs"), "publish", MAIN_ENV,
+          "emit per-borehole /b/<slug>/ SEO stubs + /browse + sitemap.xml + robots.txt (pure-read, AFTER 10)"),
 )
 
 GROUPS = ("core", "diagnostics", "xref", "live", "ensemble", "pastas", "seasonal", "publish")
