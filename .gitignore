@@ -87,3 +87,6 @@ notebooks/scratch/
 # =====================================================================
 _paper_extract.txt
 docs/dataflow_diagram.pdf
+
+# Phase-2 per-borehole stubs (rebuildable)
+web/b/
