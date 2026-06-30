@@ -4,27 +4,35 @@
 from its lat/lon by point-in-polygon, for the Phase-2 per-borehole pages (title /
 description / Open Graph / JSON-LD `addressRegion` / share card).
 
-## Needed file (not committed yet)
-`english_ceremonial_counties.geojson` — a GeoJSON `FeatureCollection` of England's
-ceremonial counties, each feature carrying a county **name** property.
+## `english_ceremonial_counties.geojson` (committed)
+A simplified `FeatureCollection` of the UK's **73 ceremonial counties**, each
+feature carrying a `county` name property. WGS84 `[lon, lat]`; `Polygon` and
+`MultiPolygon` (incl. holes) both handled.
 
-- `geo_region.py` looks for the name in these property keys (first match wins):
-  `name`, `NAME`, `CTYUA23NM`, `ctyua_name`, `county`, `REGION`, `long_name`.
-  If your source uses a different key, add it to `_NAME_KEYS`.
-- WGS84 lon/lat coordinates (standard GeoJSON order `[lon, lat]`).
-- `Polygon` and `MultiPolygon` geometries are both handled (incl. holes).
+- **Size:** ~650 KB (simplified from a ~11 MB source).
+- **Coverage:** whole UK (lat ~49.9–60.9, lon ~−10.7–1.8); England boreholes only
+  ever match English counties.
+- **Resolves correctly:** Wilgate Green → Kent, Devon, Cumbria, North Yorkshire,
+  etc.; all 688 local-pack boreholes resolve. A point inside a county "hole"
+  (e.g. exactly on the City-of-London boundary) returns `None` and degrades
+  cleanly — this matches the source data, not a bug.
 
-## Sourcing (free, OGL)
-- **OS Boundary-Line** (Ordnance Survey OpenData, OGL v3) — "Ceremonial Counties";
-  or **ONS Geoportal** boundaries. Both are Open Government Licence, so they sit
-  comfortably alongside our other open data.
-- Convert to GeoJSON and **simplify** so the repo file stays ~1–2 MB, e.g. with
-  [mapshaper](https://mapshaper.org/): `-simplify 5% keep-shapes` then
-  `-o format=geojson`. (Coastline precision doesn't matter for a borehole that's
-  inland; simplification keeps the build fast and the file small.)
+## How it was built (reproducible)
+1. **Source** — [`evansd/uk-ceremonial-counties`](https://github.com/evansd/uk-ceremonial-counties)
+   (`uk-ceremonial-counties.geojson`, derived from OS Boundary-Line ceremonial
+   counties, **OGL v3** — sits comfortably with our other open data; county name
+   in the `county` property).
+2. **Simplify** —
+   ```
+   curl -sL https://raw.githubusercontent.com/evansd/uk-ceremonial-counties/master/uk-ceremonial-counties.geojson -o uk-cc.geojson
+   python scripts/build_counties_geojson.py uk-cc.geojson
+   ```
+   `scripts/build_counties_geojson.py` applies Douglas-Peucker (~200 m) + 4-dp
+   coordinate rounding + minify (stdlib only), writing this file. Re-run only to
+   refresh.
 
 ## Graceful degradation
-Until this file is present, `region_for()` returns `None` for every borehole and
-the pages ship **region-less** (every region token collapses to empty) — the
-build is not blocked. Once added, rebuild to populate the county everywhere; the
-build logs the count of stations that resolve to no region.
+If this file is ever missing, `region_for()` returns `None` for every borehole
+and the pages ship **region-less** (region tokens collapse to empty) — the build
+is never blocked. The stub builder logs the count of stations that resolve to no
+region.
