@@ -90,6 +90,13 @@
       `<div class="d-fold-body">${innerHTML}</div></details>`;
   }
 
+  // On a standalone /b/ page the secondary sections become open cards in the
+  // dashboard grid (same content, different affordance from the panel's folds).
+  function pageCard(title, innerHTML) {
+    if (!innerHTML) return "";
+    return `<section class="d-section d-card"><h3>${esc(title)}</h3>${innerHTML}</section>`;
+  }
+
   // Quick-watch ☆ shown next to the borehole name (the full rule editor lives in
   // the "Set a watch / alerts" fold). Toggling either keeps both in sync via
   // GWC_WATCH.refreshPinControl. Reflects the current watched state at render.
@@ -338,13 +345,14 @@
     // -- forecast outlook FIRST: the fan chart is the lead visual (the main thing
     // on first click). Only the three headline metrics sit under it; threshold /
     // seed-age / long-horizon breach move into the trust card below. --
+    let fcDetailCard = "";   // on a /b/ page the forecast metrics split into their own grid card
     if (fc) {
       // When the chart continues into the 6-month seasonal outlook, a bare
       // "14-day forecast" undersells it — use a span-neutral header instead.
       const fcTitle = hasSeasonal
         ? "Forecast outlook"
         : (hLabel ? `${hLabel}-day forecast` : "Forecast");
-      out.push(`<div class="d-section"><h3>${fcTitle}</h3>`);
+      out.push(`<div class="d-section${onBoreholePage ? " d-lead" : ""}"><h3>${fcTitle}</h3>`);
       if (fc.headline) out.push(`<p class="headline">${esc(fc.headline)}</p>`);
       // stale-seed note: when the last reading is weeks old, the nowcast
       // estimates the level to today from observed rainfall (the dashed segment).
@@ -360,18 +368,22 @@
       out.push(`<div class="fan-host">${C.fanChart(detail, { historyDays: initDays, levels: triggerLevels(detail) })}</div>`);
       out.push(`<p class="caption">Observed history (dark) → ${hLabel}-day P10/P50/P90 forecast fan (blue), continuing as a monthly seasonal outlook (circles, with P10–P90 whiskers). Red dashed = breach threshold. Hover for values.</p>`);
       const tier = fc.tier ? `<span class="tier-badge tier-${esc(fc.tier)}">${TIER_LABEL[fc.tier] || fc.tier}</span>` : "–";
-      out.push(`<div style="margin-top:10px">`);
-      out.push(row("Tier", tier));
-      out.push(row("Breach prob (14 d)", pct(fc.p_breach_14d)));
+      let metrics = row("Tier", tier) + row("Breach prob (14 d)", pct(fc.p_breach_14d));
       if (fc.first_cross_median)
-        out.push(row("Median first crossing", prettyDate(fc.first_cross_median)));
-      out.push(`</div></div>`);
+        metrics += row("Median first crossing", prettyDate(fc.first_cross_median));
+      if (onBoreholePage) {
+        out.push(`</div>`);                      // close the fan lead card…
+        fcDetailCard = pageCard("Forecast detail", metrics);   // …metrics become a grid card
+      } else {
+        out.push(`<div style="margin-top:10px">${metrics}</div></div>`);
+      }
     }
 
     // Plain-English summary — below the forecast outlook (the chart leads; this
     // restates it in words). For status-only boreholes there's no forecast
     // section above, so it simply follows the status block.
     out.push(plainSentence(detail));
+    if (fcDetailCard) out.push(fcDetailCard);
 
     // -- current level vs normal: the main visual for status-only boreholes
     // (shown open); a secondary disclosure when the forecast chart leads. --
@@ -380,7 +392,8 @@
         `<p class="caption">Latest level ${fmt1(st.level)} mAOD against this ` +
         `borehole's ${monthName(st.month)} normal range.</p>`;
       out.push(fc
-        ? fold("Current level vs normal", inner)
+        ? (onBoreholePage ? pageCard("Current level vs normal", inner)
+                          : fold("Current level vs normal", inner))
         : `<div class="d-section"><h3>Current level vs normal</h3>${inner}</div>`);
     }
 
@@ -401,14 +414,18 @@
         `<p class="caption">P(below / near / above normal groundwater). ` +
         `${se.seas5_weighted ? "SEAS5-weighted" : "Equal-weight"} ESP, ` +
         `${se.n_traces || "–"} traces. Experimental.</p>`;
-      out.push(fold("Seasonal outlook (6 months) — experimental", inner));
+      out.push(onBoreholePage
+        ? pageCard("Seasonal outlook (6 months) — experimental", inner)
+        : fold("Seasonal outlook (6 months) — experimental", inner));
     }
 
     // -- set your own trigger levels — the ladder (named mAOD levels). Each level
     // now draws a line on the fan chart above (live as you edit) and is read
     // qualitatively against the fan. Forecast-only; the name-☆ owns watching. --
     if (fc && window.GWC_LADDER && window.GWC_LADDER.ladderHTML)
-      out.push(fold("Set your own trigger levels", window.GWC_LADDER.ladderHTML(stn, detail)));
+      out.push(onBoreholePage
+        ? pageCard("Set your own trigger levels", window.GWC_LADDER.ladderHTML(stn, detail))
+        : fold("Set your own trigger levels", window.GWC_LADDER.ladderHTML(stn, detail)));
 
     // -- consolidated data & downloads (1.3) — every series behind the charts
     // above, in one place rather than a drawer scattered under each chart. Each
@@ -427,7 +444,7 @@
         ? dataDisclosure("seasonal", "Seasonal outlook (months 1–6)", SEAS_COLS, se.months) : "",
     ].filter(Boolean);
     if (dataBlocks.length) {
-      out.push(`<div class="d-section"><h3>Data &amp; downloads</h3>`);
+      out.push(`<div class="d-section${onBoreholePage ? " d-wide" : ""}"><h3>Data &amp; downloads</h3>`);
       out.push(`<p class="caption">The series behind the charts above, as sortable ` +
         `tables you can copy or download (CSV / JSON). Each export carries the data ` +
         `attribution and the indicative/uncalibrated disclaimer.</p>`);

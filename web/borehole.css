@@ -44,29 +44,48 @@ body { background: var(--bg); display: block; }
 }
 .bore-caveat a { color: #6b4e00; text-decoration: underline; }
 
-/* ---- cards (observations + detail) ---- */
-.bore-obs, .bore-detail {
+/* ---- "Right now" summary card + stat strip ---- */
+.bore-summary {
   background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
   padding: 16px 20px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(26, 58, 92, 0.04);
 }
-.bore-obs h2, .bore-detail h2 {
-  margin: 0 0 4px; font-size: 1.08rem; color: var(--ink); font-weight: 680;
+.bore-summary h2 { margin: 0 0 6px; font-size: 1.08rem; color: var(--ink); font-weight: 680; }
+.bore-status-line { margin: 4px 0 0; font-size: 0.96rem; }
+.bore-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line);
+  border-radius: 12px; overflow: hidden; margin: 14px 0 10px;
 }
-.bore-obs > p:first-of-type { margin-top: 4px; font-size: 0.96rem; }
+.bore-stat { background: var(--panel); padding: 11px 14px; display: flex; flex-direction: column; gap: 3px; }
+.bs-k { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.bs-v { color: var(--ink); font-weight: 700; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
 
-.bore-obs-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin: 12px 0 8px; }
-.bore-obs-table caption { text-align: left; color: var(--muted); font-size: 0.8rem;
-  padding-bottom: 6px; font-weight: 600; }
-.bore-obs-table th[scope="col"] { text-align: left; color: var(--muted); font-weight: 600;
-  border-bottom: 1px solid var(--line); padding: 6px 8px; font-size: 0.8rem; }
-.bore-obs-table th[scope="col"]:last-child { text-align: right; }
-.bore-obs-table th[scope="row"] { text-align: left; font-weight: 400; padding: 6px 8px; color: var(--text); }
-.bore-obs-table td { text-align: right; padding: 6px 8px; font-variant-numeric: tabular-nums; }
-.bore-obs-table tbody tr:nth-child(even) { background: var(--bg); }
-
-/* the reused detail content fills the card; the fan svg scales to it */
-.bore-detail #detail-body { max-width: none; }
+/* ---- forecast + full detail: a dashboard grid of cards ---- */
+/* .bore-detail is a transparent wrapper on the page; the grid items ARE the cards. */
+.bore-detail { margin-bottom: 18px; }
+.bore-detail #detail-body {
+  max-width: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px; align-items: start;
+}
+/* full-width rows: the fan lead, plain-English line, actions, notes, wide sections */
+.bore-detail #detail-body > .d-lead,
+.bore-detail #detail-body > .d-wide,
+.bore-detail #detail-body > .trust-card,
+.bore-detail #detail-body > .plain-lang,
+.bore-detail #detail-body > .d-actions,
+.bore-detail #detail-body > .trend-note,
+.bore-detail #detail-body > .stale-note { grid-column: 1 / -1; }
+/* card chrome for every grid section */
+.bore-detail #detail-body > .d-section {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 15px 18px; margin: 0; box-shadow: 0 1px 3px rgba(26, 58, 92, 0.04);
+}
+.bore-detail #detail-body > .d-section > h3:first-child { margin-top: 0; }
 .bore-detail .fan-host svg { width: 100%; height: auto; }
+
+@media (max-width: 640px) {
+  .bore-detail #detail-body { grid-template-columns: 1fr; }
+}
 
 /* ---- footer ---- */
 .bore-foot { max-width: 900px; margin: 26px auto 52px; padding: 0 20px; }

@@ -62,10 +62,11 @@ def test_noindex_zero_observations():
     assert 'content="noindex,follow"' in head_noidx
 
 
-def test_recent_obs_block_present():
+def test_right_now_stat_bar_present():
     html = B._page(SAMPLE, "wilgate-green", "Kent", True)
-    assert "Most recent observed groundwater levels" in html
-    assert "40.60 mAOD" in html                     # real number, crawler-visible
+    assert "Right now" in html                       # the summary card replaces the obs table
+    assert "Latest level" in html and "40.60 mAOD" in html   # real number, crawler-visible
+    assert "Breach (14 d)" in html                   # stat tile from the forecast
     assert 'id="detail-body" data-station=' in html  # JS enrichment hook
 
 

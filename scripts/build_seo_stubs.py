@@ -90,6 +90,44 @@ def _obs_note(d):
     return f'<p class="bore-mast-obs">observed {esc(od)}{agetxt}</p>'
 
 
+def _stat_bar(d):
+    """A crawler-visible 'Right now' strip of key numbers (replaces the raw
+    observation table). Only tiles with a real value are emitted."""
+    st = d.get("status") or {}
+    fc = d.get("forecast") or {}
+    unit = esc((d.get("observed") or {}).get("unit") or "mAOD")
+    tiles = []
+    lvl = _fmt(st.get("level"))
+    if lvl:
+        tiles.append(("Latest level", f"{lvl} {unit}"))
+    pc = pct_ordinal(st.get("percentile"))
+    if pc:
+        tiles.append(("Percentile (month)", pc))
+    try:
+        if st.get("sgi") is not None:
+            tiles.append(("SGI", f"{float(st['sgi']):+.1f}"))
+    except (TypeError, ValueError):
+        pass
+    tr = st.get("trend")
+    if tr in _TREND_ARROW:
+        tiles.append(("7-day trend", f"{_TREND_ARROW[tr]} {esc(tr)}"))
+    od = st.get("obs_date")
+    if od:
+        age = st.get("obs_age_days")
+        tiles.append(("Observed", esc(od) + (f" · {age} d" if age is not None else "")))
+    try:
+        if fc.get("p_breach_14d") is not None:
+            p = float(fc["p_breach_14d"])
+            tiles.append(("Breach (14 d)", "&lt;1%" if p < 0.01 else f"{round(p * 100)}%"))
+    except (TypeError, ValueError):
+        pass
+    if not tiles:
+        return ""
+    cells = "".join(f'<div class="bore-stat"><span class="bs-k">{esc(k)}</span>'
+                    f'<span class="bs-v">{v}</span></div>' for k, v in tiles)
+    return f'<div class="bore-stats">{cells}</div>'
+
+
 def _recent_obs_html(d, n=8):
     obs = d.get("observed") or {}
     series = obs.get("series") or []
@@ -236,14 +274,14 @@ def _page(d, sl, region, indexable):
         f'<p class="bore-sub">{sub}</p></div>'
         f'<div class="bore-mast-status">{_status_chip(d)}{_obs_note(d)}</div></div>'
         f'<p class="bore-caveat">⚠ {esc(CAVEAT)} <a href="/about/">How this works</a>.</p>'
-        '<section class="bore-obs"><h2>Recent observations</h2>'
-        f'<p>{_status_sentence(d)}</p>{_recent_obs_html(d)}'
+        '<section class="bore-summary"><h2>Right now</h2>'
+        f'<p class="bore-status-line">{_status_sentence(d)}</p>{_stat_bar(d)}'
         '<p class="caption">Source: Environment Agency hydrology (Open Government Licence v3.0). '
         f'Full data: <a href="/pack/stations/{esc(sid)}.json">JSON</a>'
         + (f' · <a href="https://environment.data.gov.uk/hydrology/station/{esc(sid)}" '
            'rel="noopener">EA record ↗</a>' if sid else "")
         + '</p></section>'
-        '<section class="bore-detail"><h2>Forecast &amp; full detail</h2>'
+        '<section class="bore-detail">'
         f'<div id="detail-body" data-station="{esc(sid)}"><p class="caption">Loading the interactive '
         'forecast…</p></div>'
         '<noscript><p class="caption">The interactive forecast needs JavaScript; the observed levels '
