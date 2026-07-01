@@ -1,142 +1,145 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-GB">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="google-site-verification" content="EQQe_s9itmEM_gN3i_IML5v7zGzYqYIxfqZEoC7XS9A" />
-  <title>GroundwaterCast UK — explorer</title>
-  <meta name="description" content="Daily probabilistic groundwater forecasts for the UK, built on open data. Indicative — not flood warnings." />
-  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
-  <link rel="apple-touch-icon" href="favicon.svg" />
+  <title>GroundwaterCast UK — England's groundwater, per borehole</title>
+  <meta name="description" content="Daily probabilistic groundwater forecasts for every monitored borehole in England — current status vs normal, a 14-day fan, and a 6-month seasonal outlook. Built entirely on open data. Indicative — not a flood or drought warning." />
+  <link rel="canonical" href="https://groundwatercast.com/" />
   <meta name="theme-color" content="#1a3a5c" />
-  <link rel="stylesheet" href="vendor/maplibre-gl.css" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="apple-touch-icon" href="/favicon.svg" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="GroundwaterCast UK" />
+  <meta property="og:locale" content="en_GB" />
+  <meta property="og:title" content="GroundwaterCast UK — England's groundwater, per borehole" />
+  <meta property="og:description" content="Daily open-data groundwater forecasts for every monitored borehole in England. Current status vs normal → 14-day fan → seasonal outlook. Indicative, not a flood or drought warning." />
+  <meta property="og:url" content="https://groundwatercast.com/" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="GroundwaterCast UK — England's groundwater, per borehole" />
+  <meta name="twitter:description" content="Daily open-data groundwater forecasts for every monitored borehole in England. Indicative, not a flood or drought warning." />
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@graph":[
+    {"@type":"WebSite","@id":"https://groundwatercast.com/#website","name":"GroundwaterCast UK","url":"https://groundwatercast.com/","inLanguage":"en-GB","description":"Daily probabilistic groundwater forecasts for every monitored borehole in England, built on open data.","potentialAction":{"@type":"SearchAction","target":"https://groundwatercast.com/browse/","query-input":"required name=search_term_string"}},
+    {"@type":"WebPage","@id":"https://groundwatercast.com/#webpage","url":"https://groundwatercast.com/","name":"GroundwaterCast UK — England's groundwater, per borehole","isPartOf":{"@id":"https://groundwatercast.com/#website"},"inLanguage":"en-GB"},
+    {"@type":"Organization","@id":"https://groundwatercast.com/#org","name":"GroundwaterCast","url":"https://groundwatercast.com/","description":"An independent, open-source project publishing indicative groundwater forecasts for England from open data."}
+  ]}
+  </script>
+  <link rel="stylesheet" href="/home.css" />
 </head>
 <body>
-  <div id="run-banner" class="run-banner" role="alert" hidden></div>
-  <header id="topbar">
-    <div class="brand">
-      <img class="logo" src="favicon.svg" width="30" height="30" alt="" />
+  <header class="site-top">
+    <a class="site-brand" href="/">
+      <span class="logo">💧</span>
       <div>
-        <h1>GroundwaterCast UK</h1>
-        <p class="tagline">Daily groundwater forecasts · current status vs normal → 14-day fan → seasonal outlook</p>
+        <h1>GroundwaterCast&nbsp;UK</h1>
+        <p class="tagline">per-borehole groundwater forecasts · open data</p>
       </div>
-    </div>
-    <div class="topbar-meta">
-      <span id="data-asof" class="asof">loading…</span>
-      <a class="about-link" href="#" id="about-toggle">About</a>
-    </div>
+    </a>
+    <nav class="site-nav">
+      <a href="/browse/">Browse</a>
+      <a href="/about/">About</a>
+      <a class="primary" href="/explorer/">Explore the map →</a>
+    </nav>
   </header>
 
-  <main id="layout">
-    <section id="map-pane">
-      <div id="map"></div>
-
-      <div id="left-rail">
-      <div id="controls">
-        <input id="search" type="search" placeholder="Search borehole name…"
-               autocomplete="off" spellcheck="false" />
-        <div class="segmented" id="view-mode" role="group" aria-label="Map view">
-          <button class="seg active" data-mode="active" title="Boreholes with a current status and/or a forecast">Active</button>
-          <button class="seg" data-mode="forecast" title="Boreholes with a 14-day forecast">Forecast</button>
-          <button class="seg" data-mode="all" title="Every monitored borehole">All</button>
+  <main>
+    <section class="wrap hero">
+      <div class="hero-copy">
+        <h2>England's groundwater,<br />per&nbsp;borehole.</h2>
+        <p class="lede" id="national-lede">
+          Daily probabilistic forecasts for every monitored borehole in England.
+        </p>
+        <div class="stat-pill" id="national-stat" hidden>
+          <span class="dot" style="background:var(--below)"></span>
+          <span class="num" id="stat-num">—</span>
+          <span id="stat-text">below normal today</span>
         </div>
-        <div id="view-count" class="view-count"></div>
-        <div id="timeline" class="timeline" hidden>
-          <div class="tl-row">
-            <span class="tl-name">Forecast timeline</span>
-            <span id="tl-frame" class="tl-frame">Today</span>
-          </div>
-          <div class="tl-controls">
-            <button id="tl-play" class="tl-play" type="button" aria-pressed="false"
-                    aria-label="Play forecast timeline" title="Play / pause">&#9654;</button>
-            <input id="tl-slider" class="tl-slider" type="range" min="0" max="0"
-                   value="0" step="1" aria-label="Scrub the forecast timeline" />
-          </div>
-          <datalist id="tl-ticks"></datalist>
-          <div id="tl-note" class="tl-note" hidden>indicative forecast — not observed</div>
-        </div>
-        <label class="chk geo-toggle" id="geo-toggle-row">
-          <input type="checkbox" id="geology-toggle" /> Aquifer geology
-        </label>
-        <details id="watchlist-panel" class="wl-panel">
-          <!-- populated by watchlist.js (GWC_WATCH.mountPanel, after featById exists) -->
-        </details>
-      </div>
-
-      <div id="legend">
-        <div class="legend-title" id="legend-title">Current level vs normal</div>
-        <div class="legend-row"><span class="dot below"></span> Below normal</div>
-        <div class="legend-row"><span class="dot near"></span> Near normal</div>
-        <div class="legend-row"><span class="dot above"></span> Above normal</div>
-        <div class="legend-row"><span class="dot none"></span> No current status</div>
-        <div class="legend-row legend-ring"><span class="dot ring"></span> Has 14-day forecast</div>
-        <div class="legend-note">Faded fill = estimated from the forecast (no recent reading)</div>
-        <div id="geology-legend" hidden>
-          <div class="legend-title geo-title">Aquifer potential</div>
-          <div class="legend-row"><span class="sq" data-geo="Principal"></span> Principal</div>
-          <div class="legend-row"><span class="sq" data-geo="Secondary"></span> Secondary</div>
-          <div class="legend-row"><span class="sq" data-geo="Low"></span> Low</div>
-          <div class="geo-note">Indicative, from BGS 625k bedrock geology (OGL)</div>
+        <p class="sub">
+          Current status vs normal → a 14-day probabilistic fan → a 6-month
+          seasonal outlook, in one plain vocabulary. Built entirely on free,
+          openly-licensed data.
+        </p>
+        <div class="cta-row">
+          <a class="cta" href="/explorer/">Explore the map →</a>
+          <a class="cta ghost" href="/browse/">Browse all boreholes</a>
         </div>
       </div>
+      <div class="hero-map" id="hero-map" aria-label="Snapshot map of monitored boreholes in England, coloured by current status">
+        <svg id="hero-map-svg" viewBox="0 0 300 360" preserveAspectRatio="xMidYMid meet" role="img"></svg>
+        <a class="map-cover" href="/explorer/" aria-label="Open the interactive map"></a>
+        <span class="maplab" id="hero-map-lab">Live snapshot — click to open the interactive map.</span>
       </div>
     </section>
 
-    <aside id="detail" class="empty">
-      <div id="detail-empty">
-        <h2>Select a borehole</h2>
-        <p>Click a point on the map to see its current status, 14-day
-           probabilistic forecast and 6-month seasonal outlook.</p>
-        <p class="muted">Colour shows where each borehole sits today against
-           its own monthly normals. Boreholes with an outer ring also carry a
-           probabilistic forecast.</p>
+    <section class="band">
+      <div class="wrap section">
+        <p class="eyebrow">Worth a look today</p>
+        <h3>Notable right now</h3>
+        <p class="intro">A few boreholes standing out against their own seasonal
+          normal — each links to its own page with the full forecast.</p>
+        <div class="cards three" id="notable-cards">
+          <span class="loading">Loading current readings…</span>
+        </div>
       </div>
-      <div id="detail-body" hidden></div>
-    </aside>
+    </section>
+
+    <section class="wrap section">
+      <p class="eyebrow">One vocabulary</p>
+      <h3>Three horizons, one simple scale</h3>
+      <p class="intro">Every borehole is described the same way — <b>below</b>,
+        <b>near</b> or <b>above</b> normal — across three time horizons.</p>
+      <div class="cards three">
+        <div class="card">
+          <div class="horizon-n">1</div>
+          <div class="nm">Current status vs normal</div>
+          <div class="mini">The latest observed level placed on the borehole's
+            own monthly climatology — below / near / above normal, a percentile
+            for the month, and a 7-day trend.</div>
+        </div>
+        <div class="card">
+          <div class="horizon-n">2</div>
+          <div class="nm">14-day forecast</div>
+          <div class="mini">A P10/P50/P90 fan from the ECMWF ensemble driven
+            through a calibrated per-borehole recharge model, with the
+            probability of breaching a threshold.</div>
+        </div>
+        <div class="card">
+          <div class="horizon-n">3</div>
+          <div class="nm">Seasonal outlook · 1–6 months</div>
+          <div class="mini">Tercile probabilities of below / near / above-normal
+            groundwater from a SEAS5-weighted ensemble. Experimental.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="wrap section">
+        <p class="eyebrow">How it's built</p>
+        <h3>A data-driven approach, entirely on open data</h3>
+        <p class="intro">Each borehole's forecast comes from a model calibrated to
+          that borehole's <em>own</em> record — learning how its water level
+          responds to rainfall and evaporation — rather than a detailed physical
+          model built site by site. That deliberate trade, breadth over physical
+          detail, is what lets a single open, reproducible method run across every
+          monitored borehole in England. It complements detailed local groundwater
+          studies rather than replacing them. <a href="/about/">How it works →</a></p>
+      </div>
+    </section>
+
+    <footer class="wrap site-foot">
+      <p class="disclaimer"><b>Indicative, uncalibrated research forecast.</b> Not a
+        flood or drought warning; not for safety-critical use. England only.
+        Independent open-source project — not affiliated with or endorsed by any
+        employer, the Environment Agency, ECMWF, or any water company.</p>
+      <p class="attr">Contains Environment Agency data (Open Government Licence v3.0)
+        · ECMWF Open Data (CC-BY-4.0) · Copernicus ERA5 / SEAS5 · BGS 625k geology
+        (OGL) · Free &amp; open source (MIT) ·
+        <a href="https://github.com/dominicm2023/groundwatercast-uk" rel="noopener">source on GitHub</a></p>
+    </footer>
   </main>
 
-  <div id="about" hidden>
-    <div class="about-card">
-      <button class="close" id="about-close" aria-label="Close">×</button>
-      <h2>About GroundwaterCast UK</h2>
-      <p id="about-disclaimer" class="disclaimer"></p>
-      <div id="about-coverage" class="caption"></div>
-      <p>One view per borehole across three horizons in a single vocabulary —
-         <b>below / near / above normal</b>:</p>
-      <ul>
-        <li><b>Current status vs normal</b> — the latest observed level placed
-            on the borehole's own monthly climatology (a percentile for the
-            month), plus a 7-day trend.</li>
-        <li><b>14-day forecast</b> — a P10/P50/P90 fan from the ECMWF ensemble
-            through a calibrated per-borehole recharge model, with breach
-            probability against a threshold.</li>
-        <li><b>Seasonal outlook (months 1–6)</b> — tercile probabilities of
-            below / near / above-normal groundwater.</li>
-      </ul>
-      <p><b>A data-driven approach.</b> Each borehole's forecast comes from a
-         model calibrated to that borehole's <em>own</em> record — learning how
-         its water level responds to rainfall and evaporation — rather than a
-         detailed physical model of the aquifer built site by site. That
-         deliberate trade, breadth over physical detail, is what lets a single
-         open, reproducible method run across every monitored borehole in
-         England. It complements detailed local groundwater studies rather than
-         replacing them.</p>
-      <p class="disclaimer"><b>Indicative, uncalibrated research forecast.</b>
-         Not flood warnings; not for safety-critical use.</p>
-      <p id="about-attribution" class="attribution"></p>
-      <p class="attribution">Free &amp; open source (MIT) &middot;
-        <a href="https://github.com/dominicm2023/groundwatercast-uk" target="_blank" rel="noopener">source on GitHub</a></p>
-    </div>
-  </div>
-
-  <script src="vendor/maplibre-gl.js"></script>
-  <script src="config.js"></script>
-  <script src="contract_fields.js"></script>
-  <script src="charts.js"></script>
-  <script src="detail.js"></script>
-  <script src="watchlist.js"></script>
-  <script src="ladders.js"></script>
-  <script src="app.js"></script>
+  <script src="/home.js"></script>
 </body>
 </html>

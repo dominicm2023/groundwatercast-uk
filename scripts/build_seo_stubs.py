@@ -64,6 +64,32 @@ def _status_sentence(d):
     return f"Currently {esc(STATUS_LABEL.get(s, s))} for the time of year{pctxt}.{tail}"
 
 
+_TREND_ARROW = {"rising": "↑", "falling": "↓", "stable": "→"}
+
+
+def _status_chip(d):
+    """Static status chip mirroring web/detail.js statusChip — crawler-visible,
+    reuses the .chip / .chip-pct styles from style.css."""
+    st = d.get("status") or {}
+    s = st.get("status")
+    if not s:
+        return '<span class="chip none">no current status</span>'
+    arrow = (" " + _TREND_ARROW[st["trend"]]) if st.get("trend") in _TREND_ARROW else ""
+    pc = pct_ordinal(st.get("percentile"))
+    p = f' <span class="chip-pct">{pc} pct</span>' if pc else ""
+    return f'<span class="chip {esc(s)}">{esc(STATUS_LABEL.get(s, s))}{arrow}{p}</span>'
+
+
+def _obs_note(d):
+    st = d.get("status") or {}
+    od = st.get("obs_date")
+    if not od:
+        return ""
+    age = st.get("obs_age_days")
+    agetxt = f" · {age} d old" if age is not None else ""
+    return f'<p class="bore-mast-obs">observed {esc(od)}{agetxt}</p>'
+
+
 def _recent_obs_html(d, n=8):
     obs = d.get("observed") or {}
     series = obs.get("series") or []
@@ -196,17 +222,19 @@ def _page(d, sl, region, indexable):
         (f"{_fmt(lat, 4)}°N {_fmt(lon, 4)}°E" if lat is not None and lon is not None else None),
         (f"EA {esc(str(sid)[:8])}" if sid else None),
     ] if b)
-    crumb = (f'<a href="/">← Explorer</a> / <a href="/browse/">Browse</a> / '
+    crumb = ('<a href="/">Home</a> / <a href="/explorer/">Map</a> / <a href="/browse/">Browse</a> / '
              + (f"{esc(region)} / " if region else "") + esc(name))
     return (
         '<!DOCTYPE html><html lang="en-GB"><head>' + _head(d, sl, region, indexable) + "</head><body>"
         '<header class="bore-top"><a class="bore-brand" href="/"><span class="bore-logo">💧</span> '
-        'GroundwaterCast&nbsp;UK</a><nav><a href="/">Explorer</a> <a href="/browse/">Browse</a> '
+        'GroundwaterCast&nbsp;UK</a><nav><a href="/explorer/">Explorer</a> <a href="/browse/">Browse</a> '
         '<a href="/about/">About</a></nav></header>'
         '<div class="bore-wrap">'
         f'<nav class="bore-crumb">{crumb}</nav>'
+        '<div class="bore-masthead"><div class="bore-mast-id">'
         f'<h1 class="bore-h1">{esc(name)}</h1>'
-        f'<p class="bore-sub">{sub}</p>'
+        f'<p class="bore-sub">{sub}</p></div>'
+        f'<div class="bore-mast-status">{_status_chip(d)}{_obs_note(d)}</div></div>'
         f'<p class="bore-caveat">⚠ {esc(CAVEAT)} <a href="/about/">How this works</a>.</p>'
         '<section class="bore-obs"><h2>Recent observations</h2>'
         f'<p>{_status_sentence(d)}</p>{_recent_obs_html(d)}'
@@ -272,7 +300,7 @@ def _mini_shell(title, canonical, body):
         '<link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/borehole.css">'
         '</head><body>'
         '<header class="bore-top"><a class="bore-brand" href="/"><span class="bore-logo">💧</span> '
-        'GroundwaterCast&nbsp;UK</a><nav><a href="/">Explorer</a> <a href="/browse/">Browse</a> '
+        'GroundwaterCast&nbsp;UK</a><nav><a href="/explorer/">Explorer</a> <a href="/browse/">Browse</a> '
         '<a href="/about/">About</a></nav></header>'
         f'<div class="bore-wrap">{body}</div>'
         '<footer class="bore-foot"><p class="disclaimer"><b>Indicative, uncalibrated research '
@@ -323,7 +351,9 @@ def build(pack_dir: Path = PACK_DIR, out_dir: Path = OUT_DIR, today: str | None 
     new_store: dict[str, dict] = {}
     seen: dict[str, str] = {}
     entries: list[tuple] = []                                  # (slug, name, region)
-    urls = [(f"{SITE}/", today), (f"{SITE}/browse/", today)]   # home + directory
+    # home + top-level pages + directory (all editorial, always fresh-dated)
+    urls = [(f"{SITE}/", today), (f"{SITE}/about/", today),
+            (f"{SITE}/explorer/", today), (f"{SITE}/browse/", today)]
     n = noindex = noregion = 0
     problems: list[str] = []
     for fp in sorted(pack_dir.glob("*.json")):   # sorted → deterministic slug collisions

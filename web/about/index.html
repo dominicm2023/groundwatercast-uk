@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>About — how GroundwaterCast works | GroundwaterCast UK</title>
+  <meta name="description" content="How GroundwaterCast forecasts groundwater for every monitored borehole in England: current status vs normal, a 14-day ECMWF-driven fan, and a seasonal outlook — all from free, openly-licensed data. Indicative, not a flood or drought warning." />
+  <link rel="canonical" href="https://groundwatercast.com/about/" />
+  <meta name="robots" content="index,follow,max-image-preview:large" />
+  <meta name="theme-color" content="#1a3a5c" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="GroundwaterCast UK" />
+  <meta property="og:title" content="About — how GroundwaterCast works" />
+  <meta property="og:description" content="How GroundwaterCast forecasts groundwater for every monitored borehole in England from open data. Indicative, not a flood or drought warning." />
+  <meta property="og:url" content="https://groundwatercast.com/about/" />
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/borehole.css" />
+  <link rel="stylesheet" href="/about.css" />
+</head>
+<body>
+  <header class="bore-top">
+    <a class="bore-brand" href="/"><span class="bore-logo">💧</span> GroundwaterCast&nbsp;UK</a>
+    <nav><a href="/explorer/">Explorer</a> <a href="/browse/">Browse</a> <a href="/about/" aria-current="page">About</a></nav>
+  </header>
+
+  <div class="bore-wrap about-wrap">
+    <nav class="bore-crumb"><a href="/">← Home</a> / About</nav>
+    <h1 class="bore-h1">How GroundwaterCast works</h1>
+    <p class="bore-sub">Per-borehole, probabilistic, and built entirely on open data.</p>
+
+    <p class="bore-caveat">⚠ Indicative, experimental — not a flood or drought
+      warning. England only. An independent open-source project, not affiliated
+      with or endorsed by any employer, the Environment Agency, ECMWF, or any
+      water company.</p>
+
+    <section class="about-sec">
+      <h2>One vocabulary, three horizons</h2>
+      <p>Every monitored borehole in England is described the same way —
+        <b>below</b>, <b>near</b> or <b>above</b> normal — across three time
+        horizons, so a single glance means the same thing everywhere:</p>
+      <ul class="about-list">
+        <li><b>Current status vs normal.</b> The latest observed level placed on
+          the borehole's <em>own</em> monthly climatology — a percentile for the
+          month — plus a 7-day trend. "Normal" is always relative to that specific
+          borehole and that specific month of the year.</li>
+        <li><b>14-day forecast.</b> A P10 / P50 / P90 fan produced by driving the
+          51-member ECMWF ensemble through a recharge model calibrated to the
+          borehole, together with the probability of breaching a threshold.</li>
+        <li><b>Seasonal outlook (1–6 months).</b> Tercile probabilities of below /
+          near / above-normal groundwater from a SEAS5-weighted ensemble of
+          plausible weather traces. Experimental.</li>
+      </ul>
+    </section>
+
+    <section class="about-sec">
+      <h2>A data-driven approach</h2>
+      <p>Each borehole's forecast comes from a model calibrated to that borehole's
+        <em>own</em> record — learning how its water level responds to rainfall and
+        evaporation — rather than a detailed physical model of the aquifer built
+        site by site. That deliberate trade, breadth over physical detail, is what
+        lets a single open, reproducible method run across every monitored borehole
+        in England. It complements detailed local groundwater studies rather than
+        replacing them.</p>
+      <p>The pipeline runs daily: it pulls the latest Environment Agency readings
+        and open weather forcing, updates each borehole's status against its
+        climatology, and regenerates the 14-day fan and seasonal outlook.</p>
+    </section>
+
+    <section class="about-sec">
+      <h2>Everything is open</h2>
+      <p>GroundwaterCast uses only free, openly-licensed inputs, and the code is
+        open source — so the forecasts are reproducible end to end.</p>
+      <ul class="about-list">
+        <li><b>Environment Agency hydrology</b> — observed groundwater levels and
+          rainfall (Open Government Licence v3.0).</li>
+        <li><b>ECMWF Open Data</b> — the 15-day ensemble forcing (CC-BY-4.0).</li>
+        <li><b>Copernicus ERA5 / SEAS5</b> — reanalysis history and seasonal
+          ensemble (modified Copernicus Climate Change Service information).</li>
+        <li><b>BGS 625k bedrock geology</b> — indicative aquifer designation (OGL).</li>
+        <li><b>Source code</b> — free and open source (MIT), on
+          <a href="https://github.com/dominicm2023/groundwatercast-uk" rel="noopener">GitHub</a>.</li>
+      </ul>
+    </section>
+
+    <section class="about-sec">
+      <h2>What this is — and isn't</h2>
+      <p>GroundwaterCast is an <b>indicative, uncalibrated research forecast</b>.
+        The uncertainty bands describe how the model's plausible futures spread,
+        not a formally validated probability. It covers <b>England only</b>, and it
+        is <b>not a flood or drought warning</b> and must not be used for
+        safety-critical or operational decisions. For those, always rely on the
+        Environment Agency and other official sources.</p>
+      <p>Of the roughly 1,378 monitored boreholes, a forecast tranche carries the
+        full 14-day and seasonal outlook; the rest show current status where a
+        recent reading exists.</p>
+    </section>
+
+    <p style="margin:22px 0 8px"><a class="about-back" href="/explorer/">Explore the map →</a>
+      &nbsp; <a class="about-back ghost" href="/browse/">Browse all boreholes</a></p>
+  </div>
+
+  <footer class="bore-foot">
+    <p class="disclaimer"><b>Indicative, uncalibrated research forecast.</b> Not a
+      flood or drought warning; not for safety-critical use. England only.
+      Independent open-source project — not affiliated with or endorsed by any
+      employer, the Environment Agency, ECMWF, or any water company.</p>
+    <p class="caption">Contains EA data (OGL v3) · ECMWF Open Data (CC-BY-4.0) ·
+      Copernicus ERA5/SEAS5 · BGS 625k geology (OGL) · Free &amp; open source (MIT).</p>
+  </footer>
+</body>
+</html>

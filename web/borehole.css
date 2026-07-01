@@ -1,55 +1,90 @@
-/* Per-borehole page shell (/b/<slug>/). Loaded AFTER style.css, so it reuses the
-   palette + the detail-panel component styles; this only lays out the page chrome
-   (header, banner, observations, footer) and lets the reused #detail-body render
-   full-width instead of in the narrow map side panel. */
-body { background: var(--bg); }
+/* Per-borehole page shell (/b/<slug>/), also the /about/ and /browse/ chrome.
+   Loaded AFTER style.css, so it reuses the palette + the detail-panel component
+   styles; this lays out the page chrome (header, masthead, observations, footer)
+   and lets the reused #detail-body render full-width instead of in the narrow
+   map side panel. */
+body { background: var(--bg); display: block; }
 
-.bore-top { display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  background: var(--ink); color: #fff; padding: 11px 18px; }
-.bore-brand { color: #fff; font-weight: 650; font-size: 1.02rem; text-decoration: none; }
+/* ---- top bar ---- */
+.bore-top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--ink); color: #fff; padding: 11px 20px;
+  box-shadow: 0 1px 8px rgba(10, 30, 55, 0.28);
+}
+.bore-brand { color: #fff; font-weight: 700; font-size: 1.04rem; text-decoration: none;
+  display: inline-flex; align-items: center; }
 .bore-brand:hover { text-decoration: none; }
-.bore-logo { margin-right: 4px; }
-.bore-top nav a { color: #dce7f1; font-size: 0.86rem; margin-left: 16px; }
+.bore-logo { margin-right: 6px; }
+.bore-top nav { display: flex; gap: 2px; }
+.bore-top nav a { color: #dbe7f2; font-size: 0.88rem; padding: 6px 12px; border-radius: 7px; }
+.bore-top nav a:hover { background: rgba(255, 255, 255, 0.12); text-decoration: none; }
+.bore-top nav a[aria-current="page"] { color: #fff; background: rgba(255, 255, 255, 0.16); }
 
-.bore-wrap { max-width: 960px; margin: 0 auto; padding: 0 18px; }
-.bore-crumb { font-size: 0.8rem; color: var(--muted); margin: 14px 0 8px; }
+.bore-wrap { max-width: 900px; margin: 0 auto; padding: 0 20px; }
+.bore-crumb { font-size: 0.8rem; color: var(--muted); margin: 16px 0 10px; }
 .bore-crumb a { color: var(--muted); }
-.bore-h1 { font-size: 1.75rem; color: var(--ink); margin: 0; font-weight: 680; }
-.bore-sub { color: var(--muted); font-size: 0.9rem; margin: 3px 0 12px; }
-.bore-caveat { font-size: 0.84rem; color: #6b4e00; background: #fff8e1;
-  border: 1px solid #f0e0a8; border-radius: 8px; padding: 9px 12px; margin: 0 0 18px; }
+.bore-crumb a:hover { color: var(--ink); }
 
-.bore-obs { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
-  padding: 14px 18px; margin-bottom: 18px; }
-.bore-obs h2 { margin: 0 0 8px; font-size: 1.05rem; color: var(--ink); }
-.bore-obs-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; margin: 8px 0; }
-.bore-obs-table caption { text-align: left; color: var(--muted); font-size: 0.8rem; padding-bottom: 4px; }
+/* ---- masthead: identity left, live status chip right ---- */
+.bore-masthead {
+  display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between;
+  gap: 12px 20px; margin-bottom: 14px;
+}
+.bore-mast-id { min-width: 0; }
+.bore-h1 { font-size: 1.95rem; color: var(--ink); margin: 0; font-weight: 720; letter-spacing: -0.01em; }
+.bore-sub { color: var(--muted); font-size: 0.9rem; margin: 5px 0 0; }
+.bore-mast-status { text-align: right; flex: 0 0 auto; padding-top: 4px; }
+.bore-mast-status .chip { font-size: 0.92rem; padding: 5px 13px; }
+.bore-mast-obs { color: var(--muted); font-size: 0.78rem; margin: 7px 0 0; }
+
+.bore-caveat {
+  font-size: 0.84rem; color: #6b4e00; background: #fff8e1;
+  border: 1px solid #f0e0a8; border-radius: 9px; padding: 10px 13px; margin: 0 0 20px;
+}
+.bore-caveat a { color: #6b4e00; text-decoration: underline; }
+
+/* ---- cards (observations + detail) ---- */
+.bore-obs, .bore-detail {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 16px 20px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(26, 58, 92, 0.04);
+}
+.bore-obs h2, .bore-detail h2 {
+  margin: 0 0 4px; font-size: 1.08rem; color: var(--ink); font-weight: 680;
+}
+.bore-obs > p:first-of-type { margin-top: 4px; font-size: 0.96rem; }
+
+.bore-obs-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin: 12px 0 8px; }
+.bore-obs-table caption { text-align: left; color: var(--muted); font-size: 0.8rem;
+  padding-bottom: 6px; font-weight: 600; }
 .bore-obs-table th[scope="col"] { text-align: left; color: var(--muted); font-weight: 600;
-  border-bottom: 1px solid var(--line); padding: 4px 8px; }
-.bore-obs-table th[scope="row"] { text-align: left; font-weight: 400; padding: 4px 8px; }
-.bore-obs-table td { text-align: right; padding: 4px 8px; }
+  border-bottom: 1px solid var(--line); padding: 6px 8px; font-size: 0.8rem; }
+.bore-obs-table th[scope="col"]:last-child { text-align: right; }
+.bore-obs-table th[scope="row"] { text-align: left; font-weight: 400; padding: 6px 8px; color: var(--text); }
+.bore-obs-table td { text-align: right; padding: 6px 8px; font-variant-numeric: tabular-nums; }
 .bore-obs-table tbody tr:nth-child(even) { background: var(--bg); }
 
-.bore-detail { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
-  padding: 14px 18px; margin-bottom: 18px; }
-.bore-detail h2 { margin: 0 0 6px; font-size: 1.05rem; color: var(--ink); }
-/* the reused detail content fills the page width; the fan svg scales to it */
-.bore-detail #detail-body { max-width: 640px; }
+/* the reused detail content fills the card; the fan svg scales to it */
+.bore-detail #detail-body { max-width: none; }
 .bore-detail .fan-host svg { width: 100%; height: auto; }
 
-.bore-foot { max-width: 960px; margin: 24px auto 48px; padding: 0 18px; }
+/* ---- footer ---- */
+.bore-foot { max-width: 900px; margin: 26px auto 52px; padding: 0 20px; }
 .bore-foot .disclaimer { font-size: 0.85rem; color: #8a3a00; background: #fff6ef;
-  border: 1px solid #f3d9c4; border-radius: 8px; padding: 9px 11px; }
-.bore-foot .caption { color: var(--muted); font-size: 0.78rem; margin-top: 8px; }
+  border: 1px solid #f3d9c4; border-radius: 9px; padding: 11px 13px; }
+.bore-foot .caption { color: var(--muted); font-size: 0.78rem; margin-top: 10px; line-height: 1.6; }
 
-/* /browse directory */
-.bore-browse-h { font-size: 1rem; color: var(--ink); margin: 18px 0 4px; }
-.bore-browse-list { columns: 2; column-gap: 28px; list-style: none; padding: 0; margin: 0;
-  font-size: 0.9rem; }
-.bore-browse-list li { margin: 2px 0; break-inside: avoid; }
-@media (max-width: 560px) { .bore-browse-list { columns: 1; } }
+/* ---- /browse directory ---- */
+.bore-browse-h { font-size: 1.05rem; color: var(--ink); margin: 22px 0 6px; font-weight: 640; }
+.bore-browse-list { columns: 3; column-gap: 30px; list-style: none; padding: 0; margin: 0;
+  font-size: 0.92rem; }
+.bore-browse-list li { margin: 3px 0; break-inside: avoid; }
+.bore-browse-list a { color: var(--above); }
+@media (max-width: 760px) { .bore-browse-list { columns: 2; } }
+@media (max-width: 460px) { .bore-browse-list { columns: 1; } }
 
 @media (max-width: 560px) {
-  .bore-h1 { font-size: 1.45rem; }
-  .bore-wrap, .bore-foot { padding: 0 12px; }
+  .bore-h1 { font-size: 1.55rem; }
+  .bore-mast-status { text-align: left; }
+  .bore-top nav a { padding: 6px 8px; font-size: 0.82rem; }
 }

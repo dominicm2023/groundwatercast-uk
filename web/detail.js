@@ -277,20 +277,28 @@
     const st = detail.status || {};
     const fr = detail.freshness || {};
     const out = [];
-
-    out.push(`<div class="d-head"><h2 class="d-name">${esc(stn.name || stn.station_id)}</h2>${starBtn(stn, detail)}</div>`);
-    out.push(`<p class="d-sub">${esc(stn.aquifer || "—")} · ${fmt1(stn.lat)}°N ${fmt1(stn.lon)}°E</p>`);
+    // On a standalone /b/<slug>/ page the static shell already shows the name,
+    // sub-line and a status chip — skip our own to avoid duplication; the ☆
+    // watch control moves into the actions row (still inside #detail-body so
+    // watchlist.js can bind it). In the map side panel everything is shown.
+    const onBoreholePage = location.pathname.indexOf("/b/") === 0;
+    if (!onBoreholePage) {
+      out.push(`<div class="d-head"><h2 class="d-name">${esc(stn.name || stn.station_id)}</h2>${starBtn(stn, detail)}</div>`);
+      out.push(`<p class="d-sub">${esc(stn.aquifer || "—")} · ${fmt1(stn.lat)}°N ${fmt1(stn.lon)}°E</p>`);
+    }
 
     // Share + verify-on-source actions. station_id IS the EA hydrology GUID, so
     // the official record is a direct client-side URL ("where's the real
     // data?"); Copy link makes the existing #bh deep-link shareable.
     if (stn.station_id) {
       // "Open full page" links to the static per-borehole page (/b/<slug>/) — shown
-      // in the map side panel, hidden when we're already on that page.
-      const onBoreholePage = location.pathname.indexOf("/b/") === 0;
+      // in the map side panel, hidden when we're already on that page. On the page
+      // the ☆ watch control rides at the front of the actions row instead.
       const fullPage = onBoreholePage ? "" :
         `<a class="d-act-btn d-act-primary" href="/b/${slug(stn.name || stn.station_id)}/">Open full page ↗</a>`;
+      const pageStar = onBoreholePage ? starBtn(stn, detail) : "";
       out.push(`<div class="d-actions">` +
+        pageStar +
         fullPage +
         `<button type="button" class="d-act-btn d-copy-link">🔗 Copy link</button>` +
         `<a class="d-act-btn" target="_blank" rel="noopener" ` +
@@ -300,12 +308,14 @@
         `</div>`);
     }
 
-    // -- current status vs normal --
-    out.push(`<div>${statusChip(st)}</div>`);
-
-    const obs = st.obs_date ? `observed ${prettyDate(st.obs_date)}` : "no recent observation";
-    const age = st.obs_age_days != null ? ` (${st.obs_age_days} d old)` : "";
-    out.push(`<p class="caption">${obs}${age}</p>`);
+    // -- current status vs normal (skipped on the standalone page: its masthead
+    // shows the chip + observation date already) --
+    if (!onBoreholePage) {
+      out.push(`<div>${statusChip(st)}</div>`);
+      const obs = st.obs_date ? `observed ${prettyDate(st.obs_date)}` : "no recent observation";
+      const age = st.obs_age_days != null ? ` (${st.obs_age_days} d old)` : "";
+      out.push(`<p class="caption">${obs}${age}</p>`);
+    }
 
     // Stability flag (if the trend screen flagged this borehole for review).
     out.push(trendFlagBlock(detail.trend_flag));

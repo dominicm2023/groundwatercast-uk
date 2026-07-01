@@ -42,6 +42,7 @@ body {
   z-index: 5;
 }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+a.brand, a.brand:hover { color: #fff; text-decoration: none; }
 .brand .logo { width: 30px; height: 30px; flex: 0 0 auto; display: block; }
 #topbar h1 { font-size: 1.05rem; margin: 0; font-weight: 700; }
 #topbar .tagline { margin: 0; font-size: 0.74rem; color: #c7d6e6; }
