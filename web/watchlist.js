@@ -520,7 +520,7 @@
   function refreshPinControl() {
     // Quick-watch ☆ by the name (detail.js) — sync first, independent of the
     // pin control (the ☆ exists even when the watch fold is collapsed).
-    const star = document.querySelector("#detail-body .d-star");
+    const star = document.querySelector(".d-star");   // may be relocated to the page masthead
     if (star) {
       const sw = has(star.dataset.starId);
       star.textContent = sw ? "★" : "☆";

@@ -702,6 +702,27 @@
     if (el) { el.textContent = msg; setTimeout(() => { el.textContent = ""; }, 2000); }
   }
 
+  // Shared action-button behaviour (Copy link + ☆ watch). Used by the delegated
+  // container handler (map panel) AND by a direct binding when the actions are
+  // relocated into the page masthead (bindActions). Returns true if handled.
+  function actionClick(ev) {
+    const linkBtn = ev.target.closest(".d-copy-link");
+    if (linkBtn) {
+      copyText(location.href, linkBtn.parentElement.querySelector(".d-act-status"));
+      return true;
+    }
+    const star = ev.target.closest(".d-star");
+    if (star && window.GWC_WATCH && window.GWC_WATCH.toggle) {
+      const def = star.dataset.starFc === "1"
+        ? { type: "breach", prob_pct: 25 }
+        : { type: "status", crosses: "below" };
+      window.GWC_WATCH.toggle(star.dataset.starId, star.dataset.starName, def);
+      return true;
+    }
+    return false;
+  }
+  function bindActions(el) { if (el) el.addEventListener("click", actionClick); }
+
   // Post-render: wire lazy build, column sort, and export buttons via event
   // delegation on the outer container (covers all drawers; survives fan-host
   // re-renders, which only touch .fan-host). Reads _datasets/_meta set by render.
@@ -728,22 +749,8 @@
     container.addEventListener("click", (ev) => {
       // Copy a shareable deep-link to this borehole (location already carries
       // the #bh hash set by app.js on selection).
-      const linkBtn = ev.target.closest(".d-copy-link");
-      if (linkBtn) {
-        const status = linkBtn.parentElement.querySelector(".d-act-status");
-        copyText(location.href, status);
-        return;
-      }
-      // Quick-watch ☆ next to the name. Toggle via the watchlist API; its
-      // refreshAll → refreshPinControl re-syncs both the ☆ and the fold pin.
-      const star = ev.target.closest(".d-star");
-      if (star && window.GWC_WATCH && window.GWC_WATCH.toggle) {
-        const def = star.dataset.starFc === "1"
-          ? { type: "breach", prob_pct: 25 }
-          : { type: "status", crosses: "below" };
-        window.GWC_WATCH.toggle(star.dataset.starId, star.dataset.starName, def);
-        return;
-      }
+      // Copy-link + ☆ watch (shared with the page's relocated masthead actions).
+      if (actionClick(ev)) return;
       const sortBtn = ev.target.closest(".dd-sort");
       if (sortBtn) {
         const d = sortBtn.closest(".data-drawer"); const kind = d.dataset.kind;
@@ -846,7 +853,7 @@
   }
 
   window.GWC_DETAIL = {
-    render, bindFan, bindData,
+    render, bindFan, bindData, bindActions,
     refreshFanLevels: () => { if (_fanRedraw) _fanRedraw(); },
   };
 })();

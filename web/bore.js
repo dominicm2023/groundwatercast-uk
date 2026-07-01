@@ -34,5 +34,14 @@
     window.GWC_DETAIL.bindData(el);
     if (window.GWC_WATCH && window.GWC_WATCH.bindDetail) window.GWC_WATCH.bindDetail(el, detail);
     if (window.GWC_LADDER && window.GWC_LADDER.bindDetail) window.GWC_LADDER.bindDetail(el, detail);
+    // Lift the ☆ / Copy link / Verify actions up beside the borehole name.
+    // detail.js's delegated click handler lives on #detail-body, so bind the
+    // moved element directly (GWC_DETAIL.bindActions).
+    var actions = el.querySelector(".d-actions");
+    var slot = document.getElementById("bore-actions");
+    if (actions && slot) {
+      slot.appendChild(actions);
+      if (window.GWC_DETAIL.bindActions) window.GWC_DETAIL.bindActions(actions);
+    }
   }).catch(function () { fail(); });
 })();

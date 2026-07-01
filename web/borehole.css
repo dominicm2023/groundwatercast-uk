@@ -34,6 +34,9 @@ body { background: var(--bg); display: block; }
 .bore-mast-id { min-width: 0; }
 .bore-h1 { font-size: 1.95rem; color: var(--ink); margin: 0; font-weight: 720; letter-spacing: -0.01em; }
 .bore-sub { color: var(--muted); font-size: 0.9rem; margin: 5px 0 0; }
+/* the ☆ / Copy link / Verify actions, lifted up beside the name by bore.js */
+.bore-actions:empty { display: none; }
+.bore-actions .d-actions { margin: 12px 0 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .bore-mast-status { text-align: right; flex: 0 0 auto; padding-top: 4px; }
 .bore-mast-status .chip { font-size: 0.92rem; padding: 5px 13px; }
 .bore-mast-obs { color: var(--muted); font-size: 0.78rem; margin: 7px 0 0; }
