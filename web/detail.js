@@ -365,8 +365,17 @@
         `<button class="range-btn${d === range ? " active" : ""}" data-days="${d}">${l}</button>`
       ).join("");
       out.push(`<div class="fan-controls"><span class="range-label">History</span>${btns}</div>`);
-      out.push(`<div class="fan-host">${C.fanChart(detail, { historyDays: initDays, levels: triggerLevels(detail) })}</div>`);
-      out.push(`<p class="caption">Observed history (dark) → ${hLabel}-day P10/P50/P90 forecast fan (blue), continuing as a monthly seasonal outlook (circles, with P10–P90 whiskers). Red dashed = breach threshold. Hover for values.</p>`);
+      out.push(`<div class="fan-host">${C.fanChart(detail, { historyDays: initDays, levels: triggerLevels(detail), large: onBoreholePage })}</div>`);
+      out.push(`<p class="caption">Observed history (dark) → ${hLabel}-day P10/P50/P90 forecast fan (blue), continuing as a monthly seasonal outlook (circles, with P10–P90 whiskers). Red dashed = breach threshold. ${onBoreholePage ? "Hover, or drag the timeline below, for values." : "Hover for values."}</p>`);
+      // Standalone page: a draggable timeline scrubber with a live value readout
+      // (bindFan wires it to the chart's scrub API). Discoverable + touch-friendly.
+      if (onBoreholePage) {
+        out.push(`<div class="fan-scrub-wrap">` +
+          `<div class="fan-scrub-row"><span class="fan-scrub-label">Timeline</span>` +
+          `<input class="fan-scrub" type="range" min="0" max="1000" value="1000" ` +
+          `aria-label="Scrub the forecast timeline"></div>` +
+          `<div class="fan-readout" role="status" aria-live="polite"></div></div>`);
+      }
       const tier = fc.tier ? `<span class="tier-badge tier-${esc(fc.tier)}">${TIER_LABEL[fc.tier] || fc.tier}</span>` : "–";
       let metrics = row("Tier", tier) + row("Breach prob (14 d)", pct(fc.p_breach_14d));
       if (fc.first_cross_median)
@@ -770,15 +779,53 @@
     const C = window.GWC_CHARTS;
     const host = container.querySelector(".fan-host");
     if (!host) return;
+    const onPage = location.pathname.indexOf("/b/") === 0;
+    const slider = container.querySelector(".fan-scrub");
+    const readout = container.querySelector(".fan-readout");
     const initBtn = container.querySelector(".range-btn.active");
     let activeDays = initBtn
       ? (initBtn.dataset.days === "all" ? 1e9 : parseInt(initBtn.dataset.days, 10))
       : 365;
+    let api = null;
+
+    // The scrubber spans the forecast portion only: today (origin / first fan
+    // day) → the end of the chart (seasonal). History-window changes don't move
+    // it. api.ctx.x1 is the chart's max time.
+    function span() {
+      const fc = detail.forecast || {};
+      const fanAll = fc.fan || [];
+      const fcSeg = fanAll.filter((f) => f.segment !== "nowcast");
+      const first = fc.origin_date || (fcSeg[0] && fcSeg[0].date) || (fanAll[0] && fanAll[0].date);
+      const startT = first ? new Date(first + "T00:00:00Z").getTime() : 0;
+      const lastDaily = fcSeg.length
+        ? new Date(fcSeg[fcSeg.length - 1].date + "T00:00:00Z").getTime() : startT;
+      const endT = api ? api.ctx.x1 : lastDaily;
+      return { startT, endT, lastDaily };
+    }
+    function renderReadout(rows) {
+      if (!readout) return;
+      if (!rows || !rows.length) { readout.innerHTML = ""; return; }
+      const tiles = rows.slice(1).map((r) =>
+        `<div class="fr-tile"><span class="fr-k">${esc(r[0])}</span>` +
+        `<span class="fr-v">${esc(r[1])}</span></div>`).join("");
+      readout.innerHTML = `<span class="fr-date">${esc(rows[0][0])}</span>${tiles}`;
+    }
+    function wireScrub() {
+      if (!(onPage && slider && readout && api)) return;
+      const { startT, endT, lastDaily } = span();
+      const tAt = (val) => startT + (val / 1000) * (endT - startT);
+      slider.oninput = () => renderReadout(api.scrubToTime(tAt(+slider.value)));
+      const defFrac = endT > startT
+        ? Math.round(((lastDaily - startT) / (endT - startT)) * 1000) : 1000;
+      slider.value = defFrac;
+      renderReadout(api.scrubToTime(tAt(defFrac)));   // default: the end of the daily forecast
+    }
     function draw(days) {
       activeDays = days;
-      host.innerHTML = C.fanChart(detail, { historyDays: days, levels: triggerLevels(detail) });
+      host.innerHTML = C.fanChart(detail, { historyDays: days, levels: triggerLevels(detail), large: onPage });
       const svg = host.querySelector(".svg-fan");
-      if (svg) C.attachFanHover(svg);
+      api = svg ? C.attachFanHover(svg) : null;
+      wireScrub();
     }
     container.querySelectorAll(".range-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -789,9 +836,10 @@
         if (window.GWC_onRangeChange) window.GWC_onRangeChange(d);   // sync the deep-link
       });
     });
-    // the 1y view is already in the initial HTML — just attach hover to it
+    // the initial fan is already in the HTML — attach hover + wire the scrubber
     const svg = host.querySelector(".svg-fan");
-    if (svg) C.attachFanHover(svg);
+    api = svg ? C.attachFanHover(svg) : null;
+    wireScrub();
     // Expose a levels-aware redraw so the trigger-levels editor (ladders.js) can
     // move the lines on the chart live as rungs change. Keeps the active range.
     _fanRedraw = () => draw(activeDays);

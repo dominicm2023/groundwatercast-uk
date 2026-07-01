@@ -83,6 +83,37 @@ body { background: var(--bg); display: block; }
 .bore-detail #detail-body > .d-section > h3:first-child { margin-top: 0; }
 .bore-detail .fan-host svg { width: 100%; height: auto; }
 
+/* ---- forecast timeline scrubber + live readout ---- */
+.fan-scrub-wrap { margin: 12px 0 2px; }
+.fan-scrub-row { display: flex; align-items: center; gap: 12px; }
+.fan-scrub-label {
+  font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--muted); font-weight: 700; flex: 0 0 auto;
+}
+.fan-scrub {
+  flex: 1 1 auto; appearance: none; -webkit-appearance: none; height: 5px;
+  border-radius: 999px; background: linear-gradient(90deg, #cfe0ef, var(--above));
+  outline: none; cursor: pointer;
+}
+.fan-scrub::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; border: 2px solid var(--above); box-shadow: 0 1px 4px rgba(26, 58, 92, 0.3); cursor: grab;
+}
+.fan-scrub::-moz-range-thumb {
+  width: 18px; height: 18px; border-radius: 50%; background: #fff;
+  border: 2px solid var(--above); box-shadow: 0 1px 4px rgba(26, 58, 92, 0.3); cursor: grab;
+}
+.fan-readout {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px;
+  margin-top: 12px; padding: 11px 14px; background: var(--bg);
+  border: 1px solid var(--line); border-radius: 10px; min-height: 44px;
+}
+.fan-readout:empty { display: none; }
+.fr-date { font-weight: 700; color: var(--ink); font-size: 0.92rem; margin-right: 4px; }
+.fr-tile { display: flex; flex-direction: column; gap: 1px; }
+.fr-k { color: var(--muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.fr-v { color: var(--text); font-weight: 700; font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+
 @media (max-width: 640px) {
   .bore-detail #detail-body { grid-template-columns: 1fr; }
 }

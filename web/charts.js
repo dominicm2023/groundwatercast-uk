@@ -34,8 +34,13 @@
 
   function fanChart(detail, opts) {
     opts = opts || {};
-    const W = 340, H = 188;
-    const m = { l: 38, r: 8, t: 10, b: 22 };
+    // The standalone /b/ page renders a bigger, page-proportioned chart (near
+    // 1:1 with its container) so fonts/strokes aren't blown up like the panel's
+    // small viewBox stretched to full width.
+    const large = !!opts.large;
+    const W = large ? 760 : 340, H = large ? 300 : 188;
+    const m = large ? { l: 48, r: 16, t: 16, b: 30 } : { l: 38, r: 8, t: 10, b: 22 };
+    const FS_Y = large ? 11 : 9, FS_X = large ? 10.5 : 8.5, FS_M = large ? 10 : 8;
     const iw = W - m.l - m.r, ih = H - m.t - m.b;
 
     const fanAll = (detail.forecast && detail.forecast.fan) || [];
@@ -81,10 +86,11 @@
     // axes
     parts.push(`<line x1="${m.l}" y1="${m.t}" x2="${m.l}" y2="${m.t + ih}" stroke="#d8dce1"/>`);
     parts.push(`<line x1="${m.l}" y1="${m.t + ih}" x2="${m.l + iw}" y2="${m.t + ih}" stroke="#d8dce1"/>`);
-    for (let i = 0; i <= 2; i++) {
-      const v = ylo + (i / 2) * (yhi - ylo), y = Y(v);
+    const nY = large ? 4 : 2;
+    for (let i = 0; i <= nY; i++) {
+      const v = ylo + (i / nY) * (yhi - ylo), y = Y(v);
       parts.push(`<line x1="${m.l - 3}" y1="${y}" x2="${m.l + iw}" y2="${y}" stroke="#eef1f4"/>`);
-      parts.push(`<text x="${m.l - 5}" y="${y + 3}" text-anchor="end" font-size="9" fill="#6b7280">${fmt1(v)}</text>`);
+      parts.push(`<text x="${m.l - 5}" y="${y + 3}" text-anchor="end" font-size="${FS_Y}" fill="#6b7280">${fmt1(v)}</text>`);
     }
 
     // The nowcast segment (drawn below) fills the last-obs -> today gap with a
@@ -170,7 +176,7 @@
     const vmark = (t, label) => {
       const sx = X(dnum(t));
       parts.push(`<line x1="${sx.toFixed(1)}" y1="${m.t}" x2="${sx.toFixed(1)}" y2="${m.t + ih}" stroke="#9aa0a6" stroke-width="0.8" stroke-dasharray="1 2"/>`);
-      if (label) parts.push(`<text x="${sx.toFixed(1)}" y="${m.t - 2}" text-anchor="middle" font-size="8" fill="#9aa0a6">${label}</text>`);
+      if (label) parts.push(`<text x="${sx.toFixed(1)}" y="${m.t - 2}" text-anchor="middle" font-size="${FS_M}" fill="#9aa0a6">${label}</text>`);
     };
     if (nowcast.length && origin && fan.length) {
       const room = Math.abs(X(dnum(fan[0].date)) - X(dnum(origin))) > 40;
@@ -182,7 +188,7 @@
     if (thr != null) {
       const y = Y(thr);
       parts.push(`<line x1="${m.l}" y1="${y}" x2="${m.l + iw}" y2="${y}" stroke="#c0392b" stroke-width="1" stroke-dasharray="4 3"/>`);
-      parts.push(`<text x="${m.l + iw}" y="${y - 3}" text-anchor="end" font-size="8.5" fill="#c0392b">threshold ${fmt1(thr)}</text>`);
+      parts.push(`<text x="${m.l + iw}" y="${y - 3}" text-anchor="end" font-size="${FS_X}" fill="#c0392b">threshold ${fmt1(thr)}</text>`);
     }
 
     // User trigger levels (the ladder) — distinct purple dashed lines, labelled
@@ -190,14 +196,22 @@
     levels.forEach((l) => {
       const y = Math.max(m.t, Math.min(m.t + ih, Y(+l.level_mAOD)));
       parts.push(`<line x1="${m.l}" y1="${y.toFixed(1)}" x2="${m.l + iw}" y2="${y.toFixed(1)}" stroke="#6a3d9a" stroke-width="1" stroke-dasharray="2 2"/>`);
-      parts.push(`<text x="${m.l + 2}" y="${(y - 3).toFixed(1)}" text-anchor="start" font-size="8" fill="#5b2d86">${esc(l.label)} ${fmt1(+l.level_mAOD)}</text>`);
+      parts.push(`<text x="${m.l + 2}" y="${(y - 3).toFixed(1)}" text-anchor="start" font-size="${FS_M}" fill="#5b2d86">${esc(l.label)} ${fmt1(+l.level_mAOD)}</text>`);
     });
 
     // x labels (year-aware — the window can span several years)
     const lab = (t, anchor) =>
-      `<text x="${X(t).toFixed(1)}" y="${m.t + ih + 13}" text-anchor="${anchor}" font-size="8.5" fill="#6b7280">${axisDate(t)}</text>`;
-    parts.push(lab(x0, "start"));
-    parts.push(lab(x1, "end"));
+      `<text x="${X(t).toFixed(1)}" y="${m.t + ih + (large ? 16 : 13)}" text-anchor="${anchor}" font-size="${FS_X}" fill="#6b7280">${axisDate(t)}</text>`;
+    if (large) {
+      const N = 4;
+      for (let i = 0; i <= N; i++) {
+        const t = x0 + (i / N) * (x1 - x0);
+        parts.push(lab(t, i === 0 ? "start" : i === N ? "end" : "middle"));
+      }
+    } else {
+      parts.push(lab(x0, "start"));
+      parts.push(lab(x1, "end"));
+    }
 
     // hover layer (populated by attachHover)
     parts.push(`<g class="hoverlayer" style="pointer-events:none"></g>`);
@@ -214,7 +228,7 @@
   // Attach a hover crosshair + value readout to a rendered fan <svg>, using
   // the geometry stashed by the matching fanChart() call.
   function attachFanHover(svg) {
-    if (!svg || !_fanCtx) return;
+    if (!svg || !_fanCtx) return null;
     const ctx = _fanCtx;
     const layer = svg.querySelector(".hoverlayer");
     const pt = svg.createSVGPoint();
@@ -226,24 +240,18 @@
       for (const a of arr) { const d = Math.abs(getT(a) - t); if (d < bd) { bd = d; best = a; } }
       return { item: best, dist: bd };
     };
+    let pinnedT = null;   // a scrub position that survives mouse-leave (slider-driven)
 
-    function move(ev) {
-      const ctm = svg.getScreenCTM();
-      if (!ctm) return;
-      pt.x = ev.clientX; pt.y = ev.clientY;
-      const p = pt.matrixTransform(ctm.inverse());
-      if (p.x < ctx.m.l || p.x > ctx.m.l + ctx.iw) return hide();
-      const t = invX(p.x);
-
-      // pick the series under the cursor: forecast/seasonal to the right of the
-      // first fan day, observed to its left.
+    // Which series sits under time t → {markX, markY, rows}. rows[0] is a date
+    // header ([label, ""]); the rest are [key, value] pairs. Shared by the hover
+    // handler and the programmatic scrubber.
+    function rowsAt(t) {
       const fanStart = ctx.fan.length ? dnum(ctx.fan[0].date) : Infinity;
       const rows = [];
       let markY = null, markX = X(t);
       if (t >= fanStart - 0.5 * 86400000 && ctx.fan.length) {
         const r = nearest(ctx.fan, t, (f) => dnum(f.date));
         const f = r.item;
-        // beyond the daily fan, fall back to the nearest seasonal point
         const seasMax = ctx.fan.length ? dnum(ctx.fan[ctx.fan.length - 1].date) : -Infinity;
         if (t > seasMax + 16 * 86400000 && ctx.seas.length) {
           const sr = nearest(ctx.seas.filter((s) => s.month_start),
@@ -251,17 +259,19 @@
           if (sr.item) {
             markX = X(dnum(sr.item.month_start) + 14 * 86400000);
             markY = Y(sr.item.gw_p50);
-            rows.push([monthLabel(sr.item) + " (seasonal)", ""]);
-            rows.push(["P50", fmt1(sr.item.gw_p50) + " mAOD"]);
-            if (sr.item.gw_p10 != null && sr.item.gw_p90 != null) {
+            rows.push([monthLabel(sr.item) + " · seasonal", ""]);
+            rows.push(["Median", fmt1(sr.item.gw_p50) + " mAOD"]);
+            if (sr.item.gw_p10 != null && sr.item.gw_p90 != null)
               rows.push(["P10–P90", fmt1(sr.item.gw_p10) + "–" + fmt1(sr.item.gw_p90)]);
-            }
           }
         } else if (f) {
           markX = X(dnum(f.date)); markY = Y(f.p50);
-          rows.push([shortDate(dnum(f.date)), ""]);
-          rows.push(["P50", fmt1(f.p50) + " mAOD"]);
+          const nc = f.segment === "nowcast";
+          rows.push([shortDate(dnum(f.date)) + (nc ? " · nowcast" : ""), ""]);
+          rows.push([nc ? "Est. level" : "Median", fmt1(f.p50) + " mAOD"]);
           rows.push(["P10–P90", fmt1(f.p10) + "–" + fmt1(f.p90)]);
+          if (ctx.thr != null)
+            rows.push(["vs threshold", (f.p50 - ctx.thr >= 0 ? "+" : "") + fmt1(f.p50 - ctx.thr) + " m"]);
         }
       } else if (ctx.obs.length) {
         const r = nearest(ctx.obs, t, (p) => dnum(p[0]));
@@ -269,11 +279,37 @@
         if (o) {
           markX = X(dnum(o[0])); markY = Y(o[1]);
           rows.push([shortDate(dnum(o[0])), ""]);
-          rows.push(["observed", fmt1(o[1]) + " mAOD"]);
+          rows.push(["Observed", fmt1(o[1]) + " mAOD"]);
         }
       }
-      if (!rows.length) return hide();
-      draw(markX, markY, rows);
+      return { markX, markY, rows };
+    }
+
+    function move(ev) {
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return;
+      pt.x = ev.clientX; pt.y = ev.clientY;
+      const p = pt.matrixTransform(ctm.inverse());
+      if (p.x < ctx.m.l || p.x > ctx.m.l + ctx.iw) return restore();
+      const r = rowsAt(invX(p.x));
+      if (!r.rows.length) return restore();
+      draw(r.markX, r.markY, r.rows);
+    }
+
+    // Programmatic scrub (the page slider) — pins a marker + returns its rows so
+    // the caller can render a DOM readout. Persists until the next scrub.
+    function scrubToTime(t) {
+      pinnedT = t;
+      const r = rowsAt(t);
+      if (r.rows.length) draw(r.markX, r.markY, r.rows);
+      return r.rows;
+    }
+    function restore() {
+      if (pinnedT != null) {
+        const r = rowsAt(pinnedT);
+        if (r.rows.length) { draw(r.markX, r.markY, r.rows); return; }
+      }
+      hide();
     }
 
     function draw(px, py, rows) {
@@ -299,8 +335,9 @@
     function hide() { layer.innerHTML = ""; }
 
     svg.addEventListener("mousemove", move);
-    svg.addEventListener("mouseleave", hide);
+    svg.addEventListener("mouseleave", restore);
     svg.style.cursor = "crosshair";
+    return { scrubToTime, ctx, hide, rowsAt };
   }
 
   function escAttr(s) {
