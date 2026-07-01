@@ -26,12 +26,13 @@
     {"@type":"Organization","@id":"https://groundwatercast.com/#org","name":"GroundwaterCast","url":"https://groundwatercast.com/","description":"An independent, open-source project publishing indicative groundwater forecasts for England from open data."}
   ]}
   </script>
+  <link rel="stylesheet" href="/vendor/maplibre-gl.css" />
   <link rel="stylesheet" href="/home.css" />
 </head>
 <body>
   <header class="site-top">
     <a class="site-brand" href="/">
-      <span class="logo">💧</span>
+      <img class="logo" src="/favicon.svg" width="34" height="34" alt="" />
       <div>
         <h1>GroundwaterCast&nbsp;UK</h1>
         <p class="tagline">per-borehole groundwater forecasts · open data</p>
@@ -67,7 +68,7 @@
         </div>
       </div>
       <div class="hero-map" id="hero-map" aria-label="Snapshot map of monitored boreholes in England, coloured by current status">
-        <svg id="hero-map-svg" viewBox="0 0 300 360" preserveAspectRatio="xMidYMid meet" role="img"></svg>
+        <div id="hero-map-gl"></div>
         <a class="map-cover" href="/explorer/" aria-label="Open the interactive map"></a>
         <span class="maplab" id="hero-map-lab">Live snapshot — click to open the interactive map.</span>
       </div>
@@ -140,6 +141,8 @@
     </footer>
   </main>
 
+  <script src="/vendor/maplibre-gl.js"></script>
+  <script src="/config.js"></script>
   <script src="/home.js"></script>
 </body>
 </html>

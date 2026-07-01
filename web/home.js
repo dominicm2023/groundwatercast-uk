@@ -28,36 +28,38 @@
     return v + ({ 1: "st", 2: "nd", 3: "rd" }[v % 10] || "th");
   }
 
-  // England bbox → SVG. Simple equirectangular; good enough for a decorative
-  // snapshot (latitude compression is barely visible over England's span).
-  var BBOX = { lonMin: -6.4, lonMax: 1.9, latMin: 49.9, latMax: 55.9 };
-  function project(lon, lat, w, h, pad) {
-    var x = (lon - BBOX.lonMin) / (BBOX.lonMax - BBOX.lonMin);
-    var y = 1 - (lat - BBOX.latMin) / (BBOX.latMax - BBOX.latMin);
-    return [pad + x * (w - 2 * pad), pad + y * (h - 2 * pad)];
-  }
-
-  function drawMap(feats) {
-    var svg = document.getElementById("hero-map-svg");
-    if (!svg) return;
-    var W = 300, H = 360, PAD = 18;
-    // draw 'none' first (background), then coloured on top so status pops
-    var order = { none: 0, near: 1, above: 2, below: 3 };
-    var pts = feats.slice().filter(function (f) {
-      var g = f.geometry; return g && g.type === "Point" && g.coordinates;
-    }).sort(function (a, b) {
-      return (order[a.properties.status] || 0) - (order[b.properties.status] || 0);
+  // A small, non-interactive MapLibre snapshot reusing the explorer's own
+  // basemap + palette, with the boreholes as a status-coloured circle layer.
+  // interactive:false means it reads as a picture; the .map-cover anchor sends
+  // any click through to the full /explorer/.
+  function initMap(gj) {
+    var host = document.getElementById("hero-map-gl");
+    if (!host || !window.maplibregl || !window.GWC_CONFIG) return;
+    var CFG = window.GWC_CONFIG, PAL = CFG.palette;
+    var map;
+    try {
+      map = new maplibregl.Map({
+        container: host, style: CFG.basemapStyle,
+        center: CFG.center, zoom: 5.1,
+        interactive: false, attributionControl: false,
+      });
+    } catch (e) { return; }
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
+    map.on("load", function () {
+      map.addSource("bores", { type: "geojson", data: gj });
+      map.addLayer({
+        id: "bore-dots", type: "circle", source: "bores",
+        paint: {
+          "circle-color": ["match", ["get", "status"],
+            "below", PAL.below, "near", PAL.near, "above", PAL.above, PAL.none],
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 2.2, 7, 5.5],
+          "circle-stroke-width": 0.4, "circle-stroke-color": "#ffffff",
+          "circle-opacity": ["match", ["get", "status"],
+            "below", 0.95, "near", 0.95, "above", 0.95, 0.45],
+        },
+      });
+      map.fitBounds([[-6.3, 49.9], [1.8, 55.9]], { padding: 14, duration: 0 });
     });
-    var frag = "";
-    for (var i = 0; i < pts.length; i++) {
-      var p = pts[i].properties, c = pts[i].geometry.coordinates;
-      var xy = project(c[0], c[1], W, H, PAD);
-      var cls = p.status ? ("dot-" + p.status) : "dot-none";
-      var r = p.status ? 2.6 : 1.7;
-      frag += '<circle class="' + cls + '" cx="' + xy[0].toFixed(1) + '" cy="' +
-        xy[1].toFixed(1) + '" r="' + r + '" fill-opacity="' + (p.status ? 0.92 : 0.5) + '"/>';
-    }
-    svg.innerHTML = frag;
   }
 
   function renderStat(counts, total) {
@@ -134,7 +136,7 @@
         if (s && counts[s] != null) counts[s]++;
       }
       renderStat(counts, feats.length);
-      drawMap(feats);
+      initMap(gj);
       renderNotable(feats);
       var lab = document.getElementById("hero-map-lab");
       if (lab) {
