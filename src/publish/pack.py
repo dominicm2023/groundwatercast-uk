@@ -174,6 +174,18 @@ def jint(x) -> int | None:
     return None if v is None else int(v)
 
 
+def jbool(x) -> bool:
+    """NaN-safe truthiness: bool(float('nan')) is True (NaN is truthy), so a
+    missing/blank cell from a pandas row would publish as ``true``. Same defect
+    class as the fan ``segment`` NaN — coerce through pd.isna first."""
+    try:
+        if pd.isna(x):
+            return False
+    except (TypeError, ValueError):
+        pass
+    return bool(x)
+
+
 def iso_date(x) -> str | None:
     """YYYY-MM-DD or null."""
     if x is None or (isinstance(x, float) and not np.isfinite(x)):
@@ -283,13 +295,15 @@ def _forecast_block(srow: pd.Series, fan: pd.DataFrame | None) -> dict:
         else:                                   # threshold_source, headline
             out[key] = _str_or_none(val)
     out["tier"] = _str_or_none(srow.get("tier"))
-    out["is_pinned"] = bool(srow.get("is_pinned", False))
+    out["is_pinned"] = jbool(srow.get("is_pinned", False))
 
     rows = []
     if fan is not None and not fan.empty:
         for _, r in fan.sort_values("lead").iterrows():
+            # NaN is truthy, so `r.get("segment") or "forecast"` would pass a
+            # present-but-NaN cell through to null — resolve NaN/None FIRST.
             entry = {"lead": jint(r["lead"]), "date": iso_date(r["date"]),
-                     "segment": _str_or_none(r.get("segment") or "forecast")}
+                     "segment": _str_or_none(r.get("segment")) or "forecast"}
             for src, dst in FAN_KEY_MAP.items():
                 dp = PROB_DP if dst.startswith("p_") else LEVEL_DP
                 entry[dst] = jround(r.get(src), dp)
@@ -318,7 +332,7 @@ def _seasonal_block(srows: pd.DataFrame) -> dict | None:
     return {
         "run": iso_utc(first.get("run")),
         "origin_date": iso_date(first.get("origin_date")),
-        "seas5_weighted": bool(first.get("seas5_weighted", False)),
+        "seas5_weighted": jbool(first.get("seas5_weighted", False)),
         "n_traces": jint(first.get("n_traces")),
         "months": months,
     }
@@ -350,7 +364,7 @@ def _trend_flag_block(row: pd.Series | None) -> dict | None:
         "rain_corr": jround(row.get("rain_corr"), 2),
         "isolation_class": _str_or_none(row.get("isolation_class")),
         "neighbour_count": jint(row.get("neighbour_count")),
-        "already_in_register": bool(row.get("already_in_register", False)),
+        "already_in_register": jbool(row.get("already_in_register", False)),
     }
 
 
@@ -483,11 +497,13 @@ def station_feature(cat_row: pd.Series, status: dict, fresh: dict,
                     fcst: dict | None, has_seasonal: bool,
                     trend_flag: dict | None = None,
                     status_seq: list | None = None,
-                    opacity_seq: list | None = None) -> dict:
+                    opacity_seq: list | None = None,
+                    slug: str | None = None) -> dict:
     """One GeoJSON Feature — flat properties for MapLibre data-driven styling.
     (Document promoteId: "station_id" for feature-state on the consumer side.)"""
     props = {
         "station_id": str(cat_row["station_id"]),
+        "slug": slug,
         "name": _str_or_none(cat_row.get("station_name")),
         "aquifer": _str_or_none(cat_row.get("aquifer_name")),
         "aquifer_designation": _str_or_none(cat_row.get("aquifer_designation")),
@@ -523,11 +539,13 @@ def station_detail(cat_row: pd.Series, status: dict, fresh: dict,
                    normals_rows: list[dict], observed: list,
                    fcst: dict | None, seasonal: dict | None,
                    status_month: int | None,
-                   trend_flag: dict | None = None) -> dict:
+                   trend_flag: dict | None = None,
+                   slug: str | None = None) -> dict:
     return {
         "schema_version": SCHEMA_VERSION,
         "station": {
             "station_id": str(cat_row["station_id"]),
+            "slug": slug,
             "name": _str_or_none(cat_row.get("station_name")),
             "lat": jround(cat_row["lat"], 6),
             "lon": jround(cat_row["lon"], 6),
@@ -630,6 +648,25 @@ def build_pack(inputs: PackInputs, out_dir: Path, *,
         shutil.rmtree(building)
     (building / "stations").mkdir(parents=True)
 
+    # Canonical per-station URL slug — THE single assignment both the /b/ page
+    # builder (build_seo_stubs) and the client link generators (detail.js,
+    # home.js) consume, so a name collision can never send a link to the wrong
+    # station's page. Collision rule: first station (by station_id order, which
+    # matches the stub builder's sorted glob) keeps the bare name-slug; later
+    # ones get "-<sid[:6]>" (full sid if even that collides). Mirrors
+    # scripts/seo_common.slug — slugs are user-facing URLs, frozen forever.
+    from scripts.seo_common import slug as _name_slug
+    _slug_seen: set[str] = set()
+
+    def _assign_slug(sid: str, name) -> str:
+        sl = _name_slug(name or sid)
+        if sl in _slug_seen:
+            sl = f"{sl}-{sid[:6]}"
+        if sl in _slug_seen:                    # pathological: suffixed twin too
+            sl = f"{_name_slug(name or sid)}-{sid}"
+        _slug_seen.add(sl)
+        return sl
+
     features, n_forecast, n_seasonal, n_no_data = [], 0, 0, 0
     for _, cat_row in cat.sort_values("station_id").iterrows():
         sid = str(cat_row["station_id"])
@@ -638,6 +675,7 @@ def build_pack(inputs: PackInputs, out_dir: Path, *,
         if series.empty and fcst_row is None:
             n_no_data += 1                      # catalogued but never observed
             continue
+        slug = _assign_slug(sid, cat_row.get("station_name"))
 
         st = status_from_series(series, sid, normals, now=now_ts.tz_localize(None))
         status = _status_block(st)
@@ -666,7 +704,8 @@ def build_pack(inputs: PackInputs, out_dir: Path, *,
         st_seq, op_seq = status_timeline(
             st["status"], fan_rows, seas["months"] if seas else None, month_norms)
         features.append(station_feature(cat_row, status, fresh, fcst,
-                                        seas is not None, tflag, st_seq, op_seq))
+                                        seas is not None, tflag, st_seq, op_seq,
+                                        slug=slug))
 
         if include_history_for == "scope" and fcst is None:
             observed: list = []
@@ -680,7 +719,8 @@ def build_pack(inputs: PackInputs, out_dir: Path, *,
 
         detail = station_detail(cat_row, status, fresh,
                                 _normals_rows(station_norms),
-                                observed, fcst, seas, st["month"], tflag)
+                                observed, fcst, seas, st["month"], tflag,
+                                slug=slug)
         _dump(detail, building / "stations" / f"{sid}.json", pretty=pretty)
 
     if not features:
@@ -733,7 +773,22 @@ def build_pack(inputs: PackInputs, out_dir: Path, *,
     _dump(meta, building / "meta.json", pretty=pretty)
     _dump(build_manifest(building), building / "manifest.json", pretty=pretty)
 
+    # Two-rename swap. The old rmtree(out_dir)-then-rename left a multi-second
+    # no-pack window (the live site 404s mid-publish) and, if killed between the
+    # two calls, DESTROYED the previously-good pack with nothing to serve until
+    # the next successful run. Renames are near-instant; the old tree survives
+    # as .old until the new one is in place, and is restored on a failed swap.
+    old = out_dir.parent / (out_dir.name + ".old")
+    if old.exists():
+        shutil.rmtree(old)                    # leftover from a crashed swap
     if out_dir.exists():
-        shutil.rmtree(out_dir)
-    building.rename(out_dir)
+        out_dir.rename(old)
+    try:
+        building.rename(out_dir)
+    except Exception:
+        if old.exists() and not out_dir.exists():
+            old.rename(out_dir)               # put yesterday's pack back
+        raise
+    if old.exists():
+        shutil.rmtree(old, ignore_errors=True)
     return meta

@@ -173,12 +173,15 @@ def test_stage_command_resolves_pastas_interpreter():
 
 
 def test_publish_is_last_stage():
-    # The pack packages this run's outputs — it must be the final stage,
-    # in every selection that includes it.
-    assert ALL_NAMES[-1] == "build_artifact_pack"
+    # The pack packages this run's outputs; the SEO stubs derive FROM the pack,
+    # so the order must be ...build_artifact_pack -> build_seo_stubs (last, so a
+    # stub failure can't undo the published pack).
+    assert ALL_NAMES[-1] == "build_seo_stubs"
+    assert ALL_NAMES[-2] == "build_artifact_pack"
     plan = [s.name for s in select_stages(["forecast", "publish"])]
-    assert plan[-1] == "build_artifact_pack"
+    assert plan[-1] == "build_seo_stubs"
     assert plan.index("build_pastas_summary") < plan.index("build_artifact_pack")
+    assert plan.index("build_artifact_pack") < plan.index("build_seo_stubs")
 
 
 def test_publish_runs_in_main_env():

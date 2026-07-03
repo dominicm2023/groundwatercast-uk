@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -169,7 +170,12 @@ def update_one_shard(bh_id: str, fm_notation: str,
     merged = pd.concat([existing[keep_mask], new_daily], ignore_index=True)
     merged = merged.sort_values("date").reset_index(drop=True)
 
-    merged.to_parquet(fp, compression="snappy", index=False)
+    # Atomic replace: to_parquet truncates the destination first, so a reader
+    # racing this write (the daily pack build, ensemble seeding) would see a
+    # torn file, and a mid-write kill would corrupt the shard permanently.
+    tmp = fp.with_suffix(fp.suffix + ".tmp")
+    merged.to_parquet(tmp, compression="snappy", index=False)
+    os.replace(tmp, fp)
     n_added = len(new_daily) - (len(existing) - int(keep_mask.sum()))
     return (max(n_added, 0), len(merged))
 

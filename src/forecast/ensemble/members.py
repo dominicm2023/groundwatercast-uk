@@ -137,6 +137,15 @@ def member_trajectories(station_id: str, members_df: pd.DataFrame,
         mf = grp.set_index("date")["precip_mm"].astype(float) * float(f_bh)
         mf.index = pd.to_datetime(mf.index)
         rech = forecast_recharge(observed_rain, mf, kernel, forecast_dates)
+        # A NaN recharge (gauge record missing / shorter than the Weibull lag)
+        # would roll into an all-NaN trajectory: the roll's min/max clip passes
+        # NaN through, aggregate's pivot then drops every row and breach_stats
+        # crashes the whole summary stage on one bad station. Skip it loudly.
+        if rech.isna().any():
+            print(f"  ! {station_id[:8]}: NaN forecast recharge "
+                  f"({int(rech.isna().sum())}/{len(rech)} days — gauge record "
+                  f"missing or shorter than the Weibull lag) — station skipped")
+            return pd.DataFrame(columns=_MEMBER_COLS)
         exog = seasonal.copy()
         exog["Recharge_Weibull"] = rech.values
         gw = gw_roll.roll(method, seed_gw=seed_gw, seed_dgw=seed_dgw,

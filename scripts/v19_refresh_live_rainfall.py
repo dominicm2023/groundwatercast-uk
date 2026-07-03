@@ -183,7 +183,12 @@ def update_one_file(rain_measure_id: str, fm_notation: str,
 
     merged = pd.concat([existing[keep_mask], new_rows], ignore_index=True)
     merged = merged.sort_values("dateTime").reset_index(drop=True)
-    merged.to_csv(fp, index=False)
+    # Atomic replace — same rationale as v16's shard write: to_csv truncates
+    # first, so never leave a half-written file where a concurrent reader
+    # (feature build / pack) can see it.
+    tmp = fp.with_suffix(fp.suffix + ".tmp")
+    merged.to_csv(tmp, index=False)
+    os.replace(tmp, fp)
 
     n_written = len(new_daily)
     return (n_written, len(merged))

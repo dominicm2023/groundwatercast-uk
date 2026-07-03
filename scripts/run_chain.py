@@ -39,6 +39,8 @@ Stdlib-only on purpose: this must run before any environment is rebuilt.
 from __future__ import annotations
 
 import argparse
+import atexit
+import os
 import subprocess
 import sys
 import time
@@ -47,6 +49,48 @@ from pathlib import Path
 
 # Repo root = parent of the scripts/ directory containing this file.
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# Cross-run mutual exclusion. The cron schedule can overlap itself (an hourly
+# --live against a long daily --forecast --publish, or a slow previous instance
+# of the same job): the refresh scripts rewrite parquet shards / CSVs in place,
+# so two concurrent chains race — a torn shard read aborts the pack build, and
+# a stale-read write-back silently clobbers a fresh rebuild. One repo-level
+# lock serialises them; a colliding run exits 3 (the next scheduled run
+# catches up). Stale locks (a killed run) are stolen after LOCK_STALE_S.
+LOCK_PATH = REPO_ROOT / "outputs" / "run_chain.lock"
+LOCK_STALE_S = 6 * 3600
+
+
+def _acquire_lock() -> bool:
+    LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    for _ in range(2):
+        try:
+            fd = os.open(str(LOCK_PATH), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            with os.fdopen(fd, "w") as fh:
+                fh.write(f"pid={os.getpid()} started="
+                         f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n")
+            return True
+        except FileExistsError:
+            try:
+                age = time.time() - LOCK_PATH.stat().st_mtime
+            except OSError:
+                continue                      # vanished between open and stat — retry
+            if age <= LOCK_STALE_S:
+                return False
+            print(f"WARNING: stealing stale run_chain lock (age {age / 3600:.1f} h) "
+                  f"— a previous run died without releasing it.", file=sys.stderr)
+            try:
+                LOCK_PATH.unlink()
+            except OSError:
+                pass
+    return False
+
+
+def _release_lock() -> None:
+    try:
+        LOCK_PATH.unlink()
+    except OSError:
+        pass
 
 # Interpreter markers — resolved to a real executable at run time.
 MAIN_ENV = "main"      # the interpreter running this script (main GW-pipeline venv)
@@ -326,6 +370,13 @@ def main(argv=None):
               "    .venv-pastas\\Scripts\\python -m pip install -r requirements-pastas.txt",
               file=sys.stderr)
         print(f"Skipping: {[s.name for s in needs_pastas]}", file=sys.stderr)
+
+    if not _acquire_lock():
+        print("Another run_chain is already in progress (outputs/run_chain.lock) "
+              "— exiting so we don't race its in-place shard/CSV writes. The "
+              "next scheduled run will catch up.", file=sys.stderr)
+        return 3
+    atexit.register(_release_lock)
 
     results = []  # (stage, status, seconds)
     failed = False

@@ -382,13 +382,23 @@
   // replaceState writes don't fire this, so there's no feedback loop.
   window.addEventListener("hashchange", () => {
     const h = Hash.read();
-    if (RANGES.includes(h.range)) state.range = h.range;
-    if (VIEWS.includes(h.view) && h.view !== state.view && wireFilters._setView) {
-      wireFilters._setView(h.view);
+    // Absent params mean DEFAULTS — Hash.write omits view=active / range=365
+    // for clean links, so back-navigating to a bare URL must reset them, not
+    // leave the previous non-default state stuck.
+    const range = RANGES.includes(h.range) ? h.range : "365";
+    const view = VIEWS.includes(h.view) ? h.view : "active";
+    const rangeChanged = range !== state.range;
+    state.range = range;
+    if (view !== state.view && wireFilters._setView) {
+      wireFilters._setView(view);
     }
     const feat = resolveBh(h.bh);
     if (feat && feat.properties.station_id !== selectedId) {
       selectFeature(feat, { flyTo: true });
+    } else if (feat && rangeChanged) {
+      // Same borehole, different range: re-render the open panel so the chart
+      // and the active range button match the address bar (cached — instant).
+      selectFeature(feat, { flyTo: false });
     }
   });
 

@@ -24,7 +24,10 @@ PROB_DP = 4       # probabilities (p_breach*, p_above_p90*, terciles)
 PCT_DP = 1        # status percentile
 
 # stations.geojson — flat feature properties (MapLibre data-driven styling).
-GEOJSON_IDENTITY_PROPS = ("station_id", "name", "aquifer", "aquifer_designation")
+# ``slug`` is the canonical /b/<slug>/ page path segment (collision-suffixed at
+# pack build; additive, 2026-07) — link generators must use it, never re-derive
+# it from the name, or duplicate-named stations link to the wrong page.
+GEOJSON_IDENTITY_PROPS = ("station_id", "slug", "name", "aquifer", "aquifer_designation")
 GEOJSON_STATUS_PROPS = ("status", "percentile", "trend", "level",
                         "obs_date", "obs_age_days", "sgi")
 GEOJSON_FRESHNESS_PROPS = ("freshness", "days_since", "data_source")

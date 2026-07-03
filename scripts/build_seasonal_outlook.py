@@ -191,7 +191,6 @@ def main() -> int:
         # usable trace years: window fully inside the archive, not the
         # origin's own year
         years = [y for y in range(start_year, origin.year)]
-        windows = esp.trace_windows(origin, years)
         f_dates = pd.date_range(origin + pd.Timedelta(days=1),
                                 periods=esp.TRACE_DAYS, freq="D")
 
@@ -202,9 +201,24 @@ def main() -> int:
         if f_bh is None:
             f_bh = float(fbh.get(sid, 1.0))
         obs_rain = R._norm(g["Rainfall"])
-        obs_rain = obs_rain[obs_rain.index < f_dates.min()]
         obs_pet = R._norm(pet_s)
-        obs_pet = obs_pet[obs_pet.index < f_dates.min()]
+        # The traces must take over from the day after the last OBSERVED forcing,
+        # not from the origin: origin is the fan terminal (~14 days in the
+        # future), and leaving (obs_end, origin] uncovered would make recharge's
+        # gap-free reindex zero-fill a fortnight of rain in EVERY trace — a
+        # fabricated drought whose recharge deficit persists into the outlook
+        # months long after the origin level-anchor has decayed.
+        obs_end = min(
+            (obs_rain.index.max() if len(obs_rain) else origin),
+            (obs_pet.index.max() if len(obs_pet) else origin),
+            origin,
+        )
+        obs_end = pd.Timestamp(obs_end).normalize()
+        obs_rain = obs_rain[obs_rain.index <= obs_end]
+        obs_pet = obs_pet[obs_pet.index <= obs_end]
+        trace_dates = pd.date_range(obs_end + pd.Timedelta(days=1),
+                                    f_dates[-1], freq="D")
+        windows = esp.trace_windows(obs_end, years, days=len(trace_dates))
 
         mu, sig, monthly_precip_raw = {}, {}, {}
         for y, win in windows.items():
@@ -213,8 +227,8 @@ def main() -> int:
             if (tr_p.isna().mean() > MAX_TRACE_GAP_FRAC
                     or tr_e.isna().mean() > MAX_TRACE_GAP_FRAC):
                 continue
-            prec_f = _stamp(tr_p.fillna(0.0) * f_bh, f_dates)
-            evap_f = _stamp(tr_e.fillna(0.0), f_dates)
+            prec_f = _stamp(tr_p.fillna(0.0) * f_bh, trace_dates)
+            evap_f = _stamp(tr_e.fillna(0.0), trace_dates)
             bridged_prec = pd.concat([obs_rain, prec_f]).sort_index()
             bridged_prec = bridged_prec[~bridged_prec.index.duplicated(keep="last")]
             bridged_evap = pd.concat([obs_pet, evap_f]).sort_index()
@@ -230,10 +244,11 @@ def main() -> int:
             # raw-ERA5 monthly totals (pre-f_bh) for SEAS5 tercile weighting —
             # SEAS5 members and traces are classified in the same raw space.
             # Re-stamped onto the forecast calendar first (the historic index
-            # would land the totals in the trace year's periods, not ours);
+            # would land the totals in the trace year's periods, not ours),
+            # restricted to the post-origin outlook window f_dates;
             # mean × days_in_month = total for the full months the weighting
             # uses (weight_months ≤ 3 keeps clear of the partial last month).
-            stamped_raw = _stamp(tr_p.fillna(0.0), f_dates)
+            stamped_raw = _stamp(tr_p.fillna(0.0), trace_dates).reindex(f_dates)
             monthly_precip_raw[y] = esp.monthly_means(
                 stamped_raw, periods) * np.array(
                 [p.days_in_month for p in periods], float)
@@ -285,13 +300,24 @@ def main() -> int:
             pb, pn, pa = esp.weighted_tercile_probs(mu_vec, sig_vec, w_vec, t1, t2)
             if use_additive:
                 mid = p.to_timestamp() + pd.Timedelta(days=p.days_in_month / 2)
+                # SAME capped alpha the trace sigmas and the fan (hence sd46)
+                # were built with (recharge._safe_alpha, 365 d) — the raw fitted
+                # alpha can be a degenerate ~1000 d (or NaN), which would make
+                # the band's AR1 variance inconsistent with the tercile probs
+                # computed from the capped sig_vec, and over-inherit sd46.
                 q10, q50, q90 = esp.additive_band(
-                    mu_vec, w_vec, sigma=float(rec["sigma"]), alpha=float(rec["alpha"]),
+                    mu_vec, w_vec, sigma=float(rec["sigma"]),
+                    alpha=R._safe_alpha(rec.get("alpha")),
                     tau_state=tau_state, sd46=sd46, dt46=dt46,
                     dt_month=max((mid - obs_last).days, 1),
                     lead_gap=max((mid - origin).days, 0))
             else:
                 q10, q50, q90 = esp.weighted_quantiles(mu_vec, w_vec)
+            if not (np.isfinite(pb) and np.isfinite(q50)):
+                # zero trace coverage for this month (shouldn't happen with the
+                # 215-day window, but never publish a null outlook row — the UI
+                # would render it as a fabricated tercile bar)
+                continue
             rows.append({"station_id": sid, "run": run,
                          "origin_date": origin.date().isoformat(),
                          "month_ahead": m_idx + 1,

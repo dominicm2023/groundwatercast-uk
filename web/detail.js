@@ -301,8 +301,12 @@
       // "Open full page" links to the static per-borehole page (/b/<slug>/) — shown
       // in the map side panel, hidden when we're already on that page. On the page
       // the ☆ watch control rides at the front of the actions row instead.
+      // Prefer the pack's canonical slug: for duplicate-named stations the stub
+      // builder suffixes the slug, so re-deriving it from the name here would
+      // link the suffixed twin to the WRONG station's page.
+      const pageSlug = stn.slug || slug(stn.name || stn.station_id);
       const fullPage = onBoreholePage ? "" :
-        `<a class="d-act-btn d-act-primary" href="/b/${slug(stn.name || stn.station_id)}/">Open full page ↗</a>`;
+        `<a class="d-act-btn d-act-primary" href="/b/${pageSlug}/">Open full page ↗</a>`;
       const pageStar = onBoreholePage ? starBtn(stn, detail) : "";
       out.push(`<div class="d-actions">` +
         pageStar +

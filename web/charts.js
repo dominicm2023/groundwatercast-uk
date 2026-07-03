@@ -394,6 +394,11 @@
   // ==========================================================================
   function seasonalBars(months) {
     if (!months || !months.length) return "";
+    // Skip months with no probabilities at all — `100 - 0 - 0` below would
+    // otherwise render a null month as a fabricated full "above normal" bar.
+    months = months.filter((mo) =>
+      mo.p_below != null || mo.p_near != null || mo.p_above != null);
+    if (!months.length) return "";
     const rows = months.map((mo) => {
       const b = Math.round((mo.p_below || 0) * 100);
       const n = Math.round((mo.p_near || 0) * 100);

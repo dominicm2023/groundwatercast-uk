@@ -7,18 +7,19 @@
 window.GWC_CONTRACT = {
   // stations.geojson feature.properties
   GEOJSON_FIELDS: [
-    "station_id", "name", "aquifer",
+    "station_id", "slug", "name", "aquifer", "aquifer_designation",
     "status", "percentile", "trend", "level", "obs_date", "obs_age_days",
     "freshness", "days_since", "data_source",
     "tier", "p_breach_14d", "p_above_p90_14d", "first_cross_median",
     "headline", "threshold", "threshold_source", "is_pinned",
     "has_forecast", "has_seasonal",
+    "st_seq", "op_seq",
   ],
 
   // stations/<id>.json — dotted paths (nested groups flattened for the test)
   DETAIL_FIELDS: [
-    "station.station_id", "station.name", "station.lat", "station.lon",
-    "station.aquifer",
+    "station.station_id", "station.slug", "station.name", "station.lat",
+    "station.lon", "station.aquifer",
     "status.status", "status.percentile", "status.trend", "status.level",
     "status.obs_date", "status.obs_age_days", "status.month",
     "freshness.label", "freshness.days_since", "freshness.last_real_reading",

@@ -27,7 +27,8 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
-from scripts.seo_common import (STATUS_LABEL, esc, last_data_date, pct_ordinal, slug)  # noqa: E402
+from scripts.seo_common import (STATUS_LABEL, esc, last_data_date, pct_ordinal,
+                                pct_str, slug)  # noqa: E402
 from scripts.geo_region import region_for  # noqa: E402
 
 SITE = "https://groundwatercast.com"
@@ -115,12 +116,12 @@ def _stat_bar(d):
     if od:
         age = st.get("obs_age_days")
         tiles.append(("Observed", esc(od) + (f" · {age} d" if age is not None else "")))
-    try:
-        if fc.get("p_breach_14d") is not None:
-            p = float(fc["p_breach_14d"])
-            tiles.append(("Breach (14 d)", "&lt;1%" if p < 0.01 else f"{round(p * 100)}%"))
-    except (TypeError, ValueError):
-        pass
+    # Same formatter as detail.js pct() (via seo_common.pct_str): half-up
+    # rounding + the <1% / >99% honesty floor & ceiling, so the static tile and
+    # the interactive panel on the SAME page can never disagree.
+    breach = pct_str(fc.get("p_breach_14d"))
+    if breach is not None:
+        tiles.append(("Breach (14 d)", esc(breach)))
     if not tiles:
         return ""
     cells = "".join(f'<div class="bore-stat"><span class="bs-k">{esc(k)}</span>'
@@ -400,9 +401,15 @@ def build(pack_dir: Path = PACK_DIR, out_dir: Path = OUT_DIR, today: str | None 
         stn = d.get("station") or {}
         sid = stn.get("station_id")
         name = stn.get("name") or sid
-        sl = slug(name)
-        if sl in seen and seen[sl] != sid:
-            sl = f"{sl}-{str(sid)[:6]}"
+        # Prefer the pack's canonical slug (assigned once in pack.py and shared
+        # with the client link generators). The legacy re-derivation below only
+        # covers packs built before the slug field existed — same rule, same
+        # station_id order, so the URLs are identical either way.
+        sl = stn.get("slug")
+        if not sl:
+            sl = slug(name)
+            if sl in seen and seen[sl] != sid:
+                sl = f"{sl}-{str(sid)[:6]}"
         seen[sl] = sid
         region = region_for(stn.get("lat"), stn.get("lon"))
         if not region:
@@ -417,8 +424,12 @@ def build(pack_dir: Path = PACK_DIR, out_dir: Path = OUT_DIR, today: str | None 
         (dst / "index.html").write_text(html, encoding="utf-8")
         n += 1
         entries.append((sl, name, region))
-        # lastmod anti-churn: bump only when the page's indexable content changed
-        h = hashlib.sha256(html.encode("utf-8")).hexdigest()
+        # lastmod anti-churn: bump only when the page's indexable content changed.
+        # Hash with the derived observation-AGE fragments stripped ("· N d old" /
+        # "· N d") — the age increments every day by definition, so hashing it
+        # would bump lastmod daily on every stale page and defeat the store.
+        stable = re.sub(r" · \d+ d(?: old)?", "", html)
+        h = hashlib.sha256(stable.encode("utf-8")).hexdigest()
         prev = store.get(sl)
         lm = prev["lastmod"] if (prev and prev.get("hash") == h) else today
         new_store[sl] = {"hash": h, "lastmod": lm}

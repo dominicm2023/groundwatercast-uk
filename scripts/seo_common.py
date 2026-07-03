@@ -60,6 +60,26 @@ def pct_ordinal(percentile):
     return ordinal(p) if math.isfinite(p) else None
 
 
+def pct_str(p):
+    """Port of web/detail.js pct() (line 46): probability → display %, half-up
+    rounding, with the <1% floor and >99% honesty ceiling so a near-zero /
+    near-one value never renders as a certain-looking '0%' / '100%'. Returns
+    None for missing/non-finite input (caller omits the tile)."""
+    if p is None:
+        return None
+    try:
+        v = float(p)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(v):
+        return None
+    if v < 0.01:
+        return "<1%"
+    if v > 0.99:
+        return ">99%"
+    return f"{_round_half_up(v * 100)}%"
+
+
 def last_data_date(detail: dict):
     """The real last-data date for JSON-LD dateModified / temporalCoverage end —
     NEVER today. Fallback order: freshness.last_real_reading → status.obs_date →

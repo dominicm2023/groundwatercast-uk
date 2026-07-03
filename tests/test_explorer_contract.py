@@ -37,16 +37,28 @@ def test_geojson_fields_are_documented():
     geo, _ = _load_fields()
     documented = (set(C.GEOJSON_IDENTITY_PROPS) | set(C.GEOJSON_STATUS_PROPS)
                   | set(C.GEOJSON_FRESHNESS_PROPS) | set(C.GEOJSON_FORECAST_PROPS)
-                  | set(C.GEOJSON_FLAG_PROPS))
+                  | set(C.GEOJSON_FLAG_PROPS) | set(C.GEOJSON_TREND_PROPS)
+                  | set(C.GEOJSON_TIMELINE_PROPS))
     undocumented = sorted(f for f in geo if f not in documented)
     assert not undocumented, (
         f"explorer reads geojson props absent from the pack contract: {undocumented}")
 
 
+def test_geojson_fields_cover_timeline_and_identity():
+    # Regression: the JS list must include the props app.js/home.js actually
+    # read (st_seq/op_seq drive the forecast timeline; slug drives /b/ links) —
+    # otherwise a pack-side rename passes the suite while breaking the UI.
+    geo, det = _load_fields()
+    for f in ("st_seq", "op_seq", "slug", "aquifer_designation"):
+        assert f in geo, f"GEOJSON_FIELDS missing {f}"
+    assert "station.slug" in det
+
+
 def test_detail_fields_are_documented():
     _, det = _load_fields()
     # Allowed leaf keys per nested group of stations/<id>.json.
-    station = {"station_id", "name", "lat", "lon", "aquifer", "aquifer_designation"}
+    station = {"station_id", "slug", "name", "lat", "lon", "aquifer",
+               "aquifer_designation"}
     status = set(C.GEOJSON_STATUS_PROPS) | {"month"}
     freshness = {"label", "days_since", "last_real_reading", "data_source"}
     normals = set(C.NORMALS_ROW_KEYS)
@@ -78,7 +90,14 @@ def test_palette_matches_status_module():
 
 
 def test_web_shell_wires_every_script():
-    html = (WEB / "index.html").read_text(encoding="utf-8")
+    # The explorer moved to web/explorer/ in the multi-page split; / is a landing.
+    html = (WEB / "explorer" / "index.html").read_text(encoding="utf-8")
     for src in ("vendor/maplibre-gl.js", "config.js", "contract_fields.js",
                 "charts.js", "detail.js", "app.js"):
-        assert src in html, f"index.html does not load {src}"
+        assert src in html, f"explorer/index.html does not load {src}"
+
+
+def test_landing_shell_wires_home_scripts():
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    for src in ("vendor/maplibre-gl.js", "config.js", "home.js"):
+        assert src in html, f"index.html (landing) does not load {src}"

@@ -107,14 +107,17 @@
           label: `Watch when 14-day breach probability ≥ ${rule.prob_pct}%${proxyTag} — none published`,
         };
       }
-      const pctNow = Math.round(v * 100);
-      const tripped = pctNow >= rule.prob_pct;
+      // Trip on the UNROUNDED probability (rounding first would trip a 1%
+      // Watch at a true 0.5%); display with the app-wide <1% / >99% honesty
+      // floor & ceiling (detail.js pct()) — a near-zero must never read "0%".
+      const tripped = v * 100 >= rule.prob_pct;
+      const pctTxt = v < 0.01 ? "<1%" : v > 0.99 ? ">99%" : `${Math.round(v * 100)}%`;
       return {
         tripped: tripped, isProxy: isProxy,
-        standing: `${pctNow}% chance of breaching within 14 days${proxyTag}`,
+        standing: `${pctTxt} chance of breaching within 14 days${proxyTag}`,
         label: tripped
-          ? `${pctNow}% chance of breaching within 14 days${proxyTag} — at or over your ${rule.prob_pct}% Watch level`
-          : `${pctNow}% breach probability (14 d)${proxyTag} — under your ${rule.prob_pct}% Watch level`,
+          ? `${pctTxt} chance of breaching within 14 days${proxyTag} — at or over your ${rule.prob_pct}% Watch level`
+          : `${pctTxt} breach probability (14 d)${proxyTag} — under your ${rule.prob_pct}% Watch level`,
       };
     }
     if (rule.type === "status") {
@@ -566,13 +569,19 @@
   function detailFor(id) {
     const app = getCachedDetail(id);
     if (app) return app;
-    if (id in _wlDetail) return _wlDetail[id] === "pending" ? null : _wlDetail[id];
+    if (id in _wlDetail) {
+      // "pending" = fetch in flight (render as loading); "failed" = terminal
+      // for this session (levelStanding renders an HONEST published-threshold
+      // fallback, not a perpetual "reading the fan…"). No auto-retry here — a
+      // retry-on-render would loop fetch→renderPanel→fetch on a permanent 404.
+      return (_wlDetail[id] === "pending") ? null : _wlDetail[id];
+    }
     _wlDetail[id] = "pending";
     const base = (window.GWC_CONFIG && window.GWC_CONFIG.packBase) || "/pack";
     fetch(base + "/stations/" + encodeURIComponent(id) + ".json")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { _wlDetail[id] = d || null; renderPanel(); })
-      .catch(() => { _wlDetail[id] = null; });
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("http " + r.status))))
+      .then((d) => { _wlDetail[id] = d || "failed"; renderPanel(); })
+      .catch(() => { _wlDetail[id] = "failed"; renderPanel(); });
     return null;
   }
 
@@ -589,6 +598,13 @@
       const ev = evaluate(entry.rule, props); ev.mode = "published"; return ev;
     }
     const detail = detailFor(entry.id);
+    if (detail === "failed") {
+      // fan unavailable (station gone from the pack / network error) — fall
+      // back to the published-threshold rule and SAY so, rather than claiming
+      // "reading the fan…" forever while silently using the fallback.
+      const ev = evaluate(entry.rule, props);
+      ev.mode = "levels-unavailable"; ev.nLevels = levels.length; return ev;
+    }
     if (!detail) {
       const ev = evaluate(entry.rule, props);
       ev.mode = "loading"; ev.nLevels = levels.length; return ev;
@@ -674,7 +690,9 @@
       ? `Watching your ${n} trigger level${n === 1 ? "" : "s"} (worst shown)`
       : ev.mode === "loading"
         ? `Watching your ${n} trigger level${n === 1 ? "" : "s"} — reading the fan…`
-        : `Watching the published threshold (14-day breach)`;
+        : ev.mode === "levels-unavailable"
+          ? `Couldn't read the fan for your ${n} trigger level${n === 1 ? "" : "s"} — showing the published-threshold Watch`
+          : `Watching the published threshold (14-day breach)`;
     let alert = "";
     if (ev.tripped) {
       const txt = alertText(r.name, ev, null);

@@ -19,12 +19,14 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.forecast.ensemble.members import observed_daily_rainfall
 from src.forecast.pastas import recharge as R
 from src.forecast.pastas import ensemble as E
 from src.forecast.pastas.io import load_pet
 
 ROOT = Path(__file__).resolve().parents[1]
 JOINED = ROOT / "data/features/joined_timeseries.csv"
+LINKS = ROOT / "data/processed/station_links.csv"
 
 
 def main() -> int:
@@ -79,13 +81,30 @@ def main() -> int:
         print(bang)
 
     joined = pd.read_csv(JOINED, index_col=0, parse_dates=True)
+    # Observed rainfall must come from the raw v19-extended gauge files (which
+    # reach ~today), like the roll driver (build_ensemble_members) — NOT from
+    # the joined CSV, whose Rainfall is indexed on GW-observation dates only:
+    # every missing day (including the weeks-stale archive tail) would be
+    # zero-filled by recharge._daily, driving the published fan with a
+    # fabricated drought over exactly the nowcast window.
+    raw_root = cfg["download"]["raw_root"]
+    links = (pd.read_csv(LINKS).drop_duplicates("GWStationID")
+             .set_index("GWStationID") if LINKS.exists() else None)
+
+    def _gauge_rain(sid: str, fallback: pd.Series) -> pd.Series:
+        if links is None or sid not in links.index:
+            return fallback
+        rain_ids = [links.loc[sid].get(f"RainMeasureID_{i}") for i in (1, 2, 3)]
+        obs = observed_daily_rainfall(rain_ids, raw_root)
+        return obs if not obs.empty else fallback
+
     out_frames, skipped = [], []
     for sid, rec in models.items():
         mdf = members[members["station_id"] == sid][["member", "date", "precip_mm"]]
         if mdf.empty:
             skipped.append((sid, "no ensemble members")); continue
         g = joined[joined["station_id"] == sid].sort_index()
-        rain = g["Rainfall"]
+        rain = _gauge_rain(sid, g["Rainfall"])
         # Seed at the freshest GW (per-station shard incl. live tail), not the
         # staler joined level — shrinks the obs→window gap (Phase-4 refinement).
         head = E.freshest_gw(sid, fallback=g["GW_Level"])

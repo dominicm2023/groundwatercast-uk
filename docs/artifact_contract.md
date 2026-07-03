@@ -31,7 +31,8 @@ repository's own version.
 | New rounding / date convention | Treated as semantic — bump |
 
 Consumers should read `meta.json` first and check `schema_version` before
-parsing anything else.
+parsing anything else. (The published pack schemas are one of the
+repo-versioned surfaces — see `docs/product/product_definition.md` §4.2.)
 
 ## 3. File inventory
 
@@ -97,6 +98,7 @@ For MapLibre feature-state, load with `promoteId: "station_id"`.
 | Property | Type | Nullable | Semantics |
 |---|---|---|---|
 | `station_id` | string | no | EA hydrology station GUID — the join key everywhere |
+| `slug` | string | no | Canonical `/b/<slug>/` page path segment, assigned ONCE at pack build (name-slug; duplicate-named stations get a `-<sid[:6]>` suffix). Link generators must use this, never re-derive it from `name`. Additive, 2026-07. |
 | `name` | string | yes | Station name |
 | `aquifer` | string | yes | Aquifer name (from EA designation data) |
 | `aquifer_designation` | string | yes | e.g. Principal / Secondary A |
@@ -130,8 +132,8 @@ For MapLibre feature-state, load with `promoteId: "station_id"`.
 Top level: `schema_version`, `station`, `status`, `freshness`, `normals`,
 `observed`, `forecast` (nullable), `seasonal` (nullable), `trend_flag` (nullable).
 
-- **`station`**: `station_id`, `name`, `lat`, `lon`, `aquifer`,
-  `aquifer_designation`.
+- **`station`**: `station_id`, `slug` (same semantics as the geojson `slug`),
+  `name`, `lat`, `lon`, `aquifer`, `aquifer_designation`.
 - **`status`**: same keys/semantics as the geojson status block, plus
   `month` (int, the calendar month the status is judged against).
 - **`freshness`**: `label`, `days_since`, `last_real_reading` (date),
@@ -159,7 +161,8 @@ Top level: `schema_version`, `station`, `status`, `freshness`, `normals`,
     etc.); `roll_p50` is the reduced-form cross-check median, `model_spread` =
     `p50` − `roll_p50`. `segment` is `"nowcast"` for the modelled last-obs → today
     gap (observed rainfall; negative `lead`; `roll_p50`/`model_spread` null) or
-    `"forecast"` for the 14-day horizon from today.
+    `"forecast"` for the 46-day horizon from today. Leads beyond 15 are ECMWF
+    extended-range (EC46) — daily skill is weak there; the envelope is the signal.
 - **`seasonal`** (`null` when absent): `run`, `origin_date`,
   `seas5_weighted` (bool), `n_traces`, and `months` — up to 6 rows with keys
   `month_ahead`, `month_start`, `p_below`, `p_near`, `p_above`, `gw_p10`,
@@ -236,3 +239,4 @@ Status-only station detail (abridged):
 | `1.0` | 2026-06-16 | Additive (no bump): `sgi` (ladder-based Standardised Groundwater Index) on the status block — geojson prop + `detail.status` |
 | `1.0` | 2026-06-17 | Additive (no bump): `meta.coverage` block (catalogued / observed / with_forecast / no_data / excluded / live_capable) — network-coverage audit disclosure |
 | `1.0` | 2026-06-20 | Additive (no bump): `st_seq` / `op_seq` geojson props + `meta.forecast_frames` / `meta.forecast_frame_days` — forecast-timeline scrubber (recolour the map through Today → +2 wk → Months 1–6; slider spaced by real elapsed time) |
+| `1.0` | 2026-07-01 | Additive (no bump): `slug` on geojson props + `detail.station` — the canonical `/b/<slug>/` page path, assigned once at pack build so duplicate-named stations can never link to the wrong page |

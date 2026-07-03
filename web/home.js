@@ -118,7 +118,9 @@
     host.classList.remove("loading");
     host.innerHTML = picks.map(function (f) {
       var p = f.properties;
-      var href = "/b/" + slug(p.name || p.station_id) + "/";
+      // The pack's canonical slug (collision-suffixed) — never re-derive from
+      // the name, or duplicate-named stations link to the wrong page.
+      var href = "/b/" + (p.slug || slug(p.name || p.station_id)) + "/";
       return '<a class="card" href="' + href + '">' +
         '<div class="card-head"><span class="nm">' + esc(p.name || "Borehole") + "</span>" +
         chip(p) + "</div>" +

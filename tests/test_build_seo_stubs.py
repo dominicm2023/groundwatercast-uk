@@ -8,7 +8,8 @@ from scripts import build_seo_stubs as B
 SAMPLE = {
     "station": {"station_id": "01e2532a-1f3d-45db-a9a3-f6667b446ab0", "name": "Wilgate Green",
                 "lat": 51.276283, "lon": 0.866011, "aquifer": "Principal"},
-    "status": {"status": "near", "percentile": 50.6, "level": 40.6, "obs_date": "2026-05-09"},
+    "status": {"status": "near", "percentile": 50.6, "level": 40.6,
+               "obs_date": "2026-05-09", "obs_age_days": 43},
     "freshness": {"last_real_reading": "2026-05-09", "label": "stale"},
     "observed": {"unit": "mAOD", "series": [["2023-05-05", 24.495], ["2026-05-09", 40.6]]},
     "forecast": {"p_breach_14d": 0.0},
@@ -95,7 +96,36 @@ def test_build_smoke(tmp_path):
     assert "<loc>https://groundwatercast.com/about/</loc>" in sm
     assert "<loc>https://groundwatercast.com/explorer/</loc>" in sm
     assert "Sitemap: https://groundwatercast.com/sitemap.xml" in (web / "robots.txt").read_text()
-    # lastmod anti-churn: a second build with unchanged content keeps the same lastmod
+    # lastmod anti-churn: a second build with unchanged DATA keeps the same
+    # lastmod even though the daily pack rebuild bumped the derived observation
+    # age (the age text must be excluded from the content hash — hashing it
+    # would bump lastmod on every page every day).
+    aged = json.loads(json.dumps(SAMPLE))
+    aged["status"]["obs_age_days"] = 48        # five days later, no new reading
+    (pack / "a.json").write_text(json.dumps(aged), encoding="utf-8")
     B.build(pack, out, today="2026-07-05", lastmod_store=store)
     sm2 = (web / "sitemap.xml").read_text(encoding="utf-8")
     assert "<lastmod>2026-06-30</lastmod>" in sm2   # carried forward, not bumped to 07-05
+
+
+def test_pack_slug_is_authoritative(tmp_path):
+    # A pack that carries the canonical slug (pack.py) wins over re-derivation.
+    pack = tmp_path / "pack"
+    pack.mkdir()
+    d = json.loads(json.dumps(SAMPLE))
+    d["station"]["slug"] = "wilgate-green-7b1f7f"    # collision-suffixed upstream
+    (pack / "a.json").write_text(json.dumps(d), encoding="utf-8")
+    out = tmp_path / "web" / "b"
+    B.build(pack, out, today="2026-06-30", lastmod_store=tmp_path / "lm.json")
+    assert (out / "wilgate-green-7b1f7f" / "index.html").exists()
+    assert not (out / "wilgate-green").exists()
+
+
+def test_breach_tile_matches_detail_js_pct():
+    from scripts.seo_common import pct_str
+    assert pct_str(0.995) == ">99%"     # honesty ceiling — never "100%"
+    assert pct_str(0.003) == "<1%"      # honesty floor — never "0%"
+    assert pct_str(0.125) == "13%"      # half-up like JS Math.round, not banker's
+    assert pct_str(None) is None
+    html = B._page(SAMPLE, "wilgate-green", "Kent", True)
+    assert "&lt;1%" in html             # SAMPLE p_breach_14d=0.0 → floored

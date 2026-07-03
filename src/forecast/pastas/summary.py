@@ -120,9 +120,12 @@ def _breach_from_samples(samples: np.ndarray, dates: pd.DatetimeIndex,
         med, p25, p75 = (float(np.quantile(first_lead, q)) for q in (0.5, 0.25, 0.75))
         out["first_cross_median_lead"] = med
         dl = list(dates)
-        out["first_cross_median"] = dl[int(round(med)) - 1]
-        out["first_cross_p25"] = dl[int(round(p25)) - 1]
-        out["first_cross_p75"] = dl[int(round(p75)) - 1]
+        # round half UP — mirrors aggregate.breach_stats (banker's round(2.5)==2
+        # would date the crossing a day before the reported fractional lead)
+        _half_up = lambda x: int(np.floor(x + 0.5))  # noqa: E731
+        out["first_cross_median"] = dl[_half_up(med) - 1]
+        out["first_cross_p25"] = dl[_half_up(p25) - 1]
+        out["first_cross_p75"] = dl[_half_up(p75) - 1]
     return out
 
 

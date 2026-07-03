@@ -41,6 +41,14 @@ def gw_monthly_normals(joined: pd.DataFrame) -> pd.DataFrame:
         pass
     df["ym"] = dt.dt.to_period("M")
     df["month"] = dt.dt.month
+    # Exclude the current, in-progress calendar month: a mid-month rebuild would
+    # fold a partial (month-start-biased) mean into the ladder as a full
+    # year-sample — and let it count toward MIN_YEARS — shifting the very
+    # yardstick this month's own status is judged against. Historic single-
+    # reading months (normal dipped cadence) are untouched.
+    df = df[df["ym"] < pd.Timestamp.now().to_period("M")]
+    if df.empty:
+        return pd.DataFrame(columns=NORMALS_COLS)
 
     monthly = (df.groupby(["station_id", "ym", "month"])["GW_Level"]
                .mean().reset_index())

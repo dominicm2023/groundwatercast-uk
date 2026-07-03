@@ -8,7 +8,7 @@ borehole:
   - the GW fan (per-day P10/P50/P90).
 
 Breach direction: a breach is GW rising **above** the threshold T (high
-groundwater, i.e. gw_pred ≥ T).
+groundwater → infiltration/spill risk), i.e. gw_pred ≥ T.
 
 All outputs are labelled *indicative / uncalibrated* (design §9): the MVP
 propagates rainfall-member spread only, so the ensemble is under-dispersed.
@@ -66,7 +66,10 @@ def breach_stats(traj_bh: pd.DataFrame, threshold: float | None, *,
         "first_cross_p25": pd.NaT,
         "first_cross_p75": pd.NaT,
         "first_cross_median_lead": np.nan,
-        "gw_p50_end": float(w.iloc[-1].median()),
+        # guarded: dict literals evaluate BEFORE the empty check below, so an
+        # unguarded iloc[-1] made the w.empty half of that guard dead code
+        # (IndexError for any direct caller with an empty frame).
+        "gw_p50_end": float(w.iloc[-1].median()) if not w.empty else np.nan,
     }
     if threshold is None or w.empty:
         return out
@@ -84,10 +87,13 @@ def breach_stats(traj_bh: pd.DataFrame, threshold: float | None, *,
         first_dates = ge.idxmax(axis=0)[crossed]
         leads = first_dates.map(lead_of).astype(float)
         med, p25, p75 = (float(leads.quantile(q)) for q in (0.5, 0.25, 0.75))
+        # round half UP (not Python's banker's round): a fractional lead like
+        # 2.5 must map to day 3, agreeing with the reported fractional lead.
+        _half_up = lambda x: int(np.floor(x + 0.5))  # noqa: E731
         out["first_cross_median_lead"] = med
-        out["first_cross_median"] = dates[int(round(med)) - 1]
-        out["first_cross_p25"] = dates[int(round(p25)) - 1]
-        out["first_cross_p75"] = dates[int(round(p75)) - 1]
+        out["first_cross_median"] = dates[_half_up(med) - 1]
+        out["first_cross_p25"] = dates[_half_up(p25) - 1]
+        out["first_cross_p75"] = dates[_half_up(p75) - 1]
     return out
 
 

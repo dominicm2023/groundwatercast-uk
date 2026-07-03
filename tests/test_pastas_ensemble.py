@@ -46,15 +46,21 @@ def test_drive_borehole_shape_and_spread(calibrated):
     out = E.drive_borehole("BH1", rec, head, prec, evap, mdf)
 
     assert list(out.columns) == E.MEMBER_COLS
-    assert out["member"].nunique() == 6
-    assert len(out) == 6 * 14
+    # The last-obs -> forecast-start gap (1-7 Jan) is emitted ONCE as the shared
+    # nowcast pseudo-member (-1); the 6 real members cover the forecast window.
+    fc = out[out["member"] >= 0]
+    nc = out[out["member"] == -1]
+    assert fc["member"].nunique() == 6
+    assert len(fc) == 6 * 14
+    assert len(nc) == 7                                  # 2023-01-01 .. 01-07
+    assert nc["date"].max() < fc["date"].min()           # nowcast strictly before forecast
     assert np.isfinite(out["gw_pred"]).all()
     assert (out["gw_sigma"] > 0).all()
     # members disagree on at least one date (ensemble has spread)
-    per_date_std = out.groupby("date")["gw_pred"].std()
+    per_date_std = fc.groupby("date")["gw_pred"].std()
     assert per_date_std.max() > 0
     # predictive sigma grows (or holds) with lead
-    s = out.groupby("date")["gw_sigma"].first()
+    s = fc.groupby("date")["gw_sigma"].first()
     assert s.iloc[-1] >= s.iloc[0]
 
 

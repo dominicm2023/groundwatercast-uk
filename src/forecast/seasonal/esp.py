@@ -15,7 +15,12 @@ import numpy as np
 import pandas as pd
 from scipy.stats import norm
 
-TRACE_DAYS = 183                       # ~6 months of daily forcing
+# Forecast-calendar span each ESP run must cover: the run-in to the first full
+# outlook month (0-30 days — the origin is the fan terminal, so its day-of-month
+# is arbitrary) plus six calendar months (181-184 days). 183 was too short: month
+# 6 was published from 0-30 days of trace (a month-start-biased partial mean, and
+# an all-NaN row for a month-1st origin).
+TRACE_DAYS = 215
 
 
 def trace_windows(origin: pd.Timestamp, years: list[int], *,

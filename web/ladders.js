@@ -434,7 +434,15 @@
       byId.set(e.id, { id: e.id, name: String(e.name || e.id), rungs: e.rungs });
     }
     save(Array.from(byId.values()));
+    // Mirror setRungs' post-mutation sync: without these, the fan chart keeps
+    // drawing the PRE-import trigger-level lines (contradicting the readout
+    // below it) and the watchlist standing stays stale until an unrelated
+    // redraw.
     refresh();
+    if (window.GWC_DETAIL && window.GWC_DETAIL.refreshFanLevels)
+      window.GWC_DETAIL.refreshFanLevels();
+    if (window.GWC_WATCH && window.GWC_WATCH.renderPanel)
+      window.GWC_WATCH.renderPanel();
   }
 
   // ---- clipboard (mirrors watchlist.js / detail.js copyText) -----------------
