@@ -497,3 +497,25 @@ def test_frame_days_use_real_seasonal_month_starts(inputs, tmp_path):
     m1 = days[frames.index("Month 1")]
     assert m1 == 33
     assert all(b > a for a, b in zip(days, days[1:]))   # strictly increasing
+
+
+def test_frame_days_ignore_stale_origin_cohort():
+    # An archive predating fleet-uniform anchoring mixes per-borehole origins;
+    # the dominant (freshest) cohort must win, and offsets inside the fan
+    # window fall back to the approximation instead of misleading.
+    from src.publish.pack import _frame_days, _seasonal_month_starts
+    rows = []
+    for m in range(1, 7):
+        # 5 fresh-cohort boreholes (dominant) + 1 months-stale straggler
+        for _ in range(5):
+            rows.append({"month_ahead": m, "origin_date": "2026-07-03",
+                         "month_start": f"2026-{7 + m:02d}-01" if 7 + m <= 12
+                         else f"2027-{7 + m - 12:02d}-01"})
+        rows.append({"month_ahead": m, "origin_date": "2026-03-05",
+                     "month_start": f"2026-{3 + m:02d}-01"})
+    df = pd.DataFrame(rows)
+    starts = _seasonal_month_starts(df)
+    assert starts[0] == "2026-08-01"                # dominant cohort, not March's
+    days = _frame_days(starts, now="2026-07-04T18:00:00Z")
+    assert days[3] == 42                            # Month 1: Aug mid ~= +42 d
+    assert all(b > a for a, b in zip(days, days[1:]))

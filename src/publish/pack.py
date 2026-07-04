@@ -392,13 +392,22 @@ _OP_OBSERVED, _OP_ESTIMATED, _OP_NO_DATA = 0.92, 0.45, 0.55
 
 
 def _seasonal_month_starts(seasonal_all: pd.DataFrame | None) -> list:
-    """The run's fleet-uniform seasonal month_start per month_ahead (1..N), for
-    real-days frame spacing. [] when there's no seasonal data."""
+    """The run's seasonal month_start per month_ahead (1..N), for real-days
+    frame spacing. Restricted to the DOMINANT origin_date cohort: an archive
+    predating the fleet-uniform anchoring carries per-borehole origins, and a
+    naive first-row-per-month pick can land on a months-stale borehole whose
+    "Month 1" started last spring. [] when there's no seasonal data."""
     if seasonal_all is None or seasonal_all.empty \
             or "month_start" not in seasonal_all.columns:
         return []
-    firsts = (seasonal_all.dropna(subset=["month_start"])
-              .drop_duplicates("month_ahead").sort_values("month_ahead"))
+    df = seasonal_all.dropna(subset=["month_start"])
+    if df.empty:
+        return []
+    if "origin_date" in df.columns and df["origin_date"].notna().any():
+        dominant = df["origin_date"].mode()
+        if len(dominant):
+            df = df[df["origin_date"] == dominant.iloc[0]]
+    firsts = df.drop_duplicates("month_ahead").sort_values("month_ahead")
     return list(firsts["month_start"])
 
 
@@ -427,7 +436,10 @@ def _frame_days(seasonal_month_starts: list | None = None,
                 ms = pd.Timestamp(starts[mi])
                 ms = ms.tz_localize(None) if ms.tzinfo else ms
                 off = int((ms.normalize() - now).days + 14)   # month mid-point
-            days.append(off if off is not None and off > 0 else 30 * (mi + 1))
+            # a stale cohort can compute an offset inside (or before) the fan
+            # window — fall back to the approximation rather than mislead
+            usable = off is not None and off > int(TIMELINE_FAN_LEADS[-1])
+            days.append(off if usable else 30 * (mi + 1))
             mi += 1
         else:  # now
             days.append(0)
