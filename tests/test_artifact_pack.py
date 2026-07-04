@@ -454,3 +454,46 @@ def test_read_shard_without_data_source_column(tmp_path):
     df.to_parquet(tmp_path / "T.parquet", index=False)
     s = _read_shard(tmp_path, "T")
     assert len(s) == 2 and s.index.max() == pd.Timestamp("2026-06-08")
+
+
+# ---------------------------------------------------------------------------
+# 2026-07 additive files: stations/index.json + national_history.json,
+# and the real-days seasonal frame offsets.
+# ---------------------------------------------------------------------------
+
+def test_stations_index_catalogue(inputs, tmp_path):
+    out, _ = _build(inputs, tmp_path)
+    idx = json.loads((out / "stations" / "index.json").read_text(encoding="utf-8"))
+    assert {e["station_id"] for e in idx} == {"A", "B"}
+    a = next(e for e in idx if e["station_id"] == "A")
+    assert set(a) == {"station_id", "slug", "name", "lat", "lon",
+                      "aquifer_designation", "has_forecast", "has_seasonal"}
+    assert a["slug"] and a["has_forecast"] is True
+
+
+def test_national_history_appends_and_dedupes(inputs, tmp_path):
+    out, _ = _build(inputs, tmp_path)
+    hist = json.loads((out / "national_history.json").read_text(encoding="utf-8"))
+    assert len(hist) == 1
+    row = hist[0]
+    assert row["date"] == FIXED_NOW[:10]
+    assert row["stations"] == 2 and row["with_forecast"] == 1
+    assert row["below"] + row["near"] + row["above"] <= row["stations"]
+    # rebuild on the same day: replaced, not duplicated (store lives NEXT TO the
+    # pack dir and survives the atomic swap)
+    _build(inputs, tmp_path)
+    hist2 = json.loads((out / "national_history.json").read_text(encoding="utf-8"))
+    assert len(hist2) == 1
+
+
+def test_frame_days_use_real_seasonal_month_starts(inputs, tmp_path):
+    out, meta = _build(inputs, tmp_path)
+    days = meta["forecast_frame_days"]
+    frames = meta["forecast_frames"]
+    assert days[0] == 0 and days[frames.index("+2 wk")] == 14
+    # the fixture's seasonal months start 2026-07-01 (FIXED_NOW = 2026-06-12):
+    # Month 1 sits at its month MID-point in real days-ahead (~19 + 14 = 33),
+    # NOT the old 30*mi approximation locked to day 30.
+    m1 = days[frames.index("Month 1")]
+    assert m1 == 33
+    assert all(b > a for a, b in zip(days, days[1:]))   # strictly increasing

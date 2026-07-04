@@ -66,15 +66,30 @@ def apply_qc(
         if len(out) < n_before:
             flags.append(f"dropped_{n_before - len(out)}_outliers")
 
-    # Stuck-sensor flag (informational; rows retained)
+    # Stuck-sensor flag (informational; rows retained). Two checks:
+    #  (a) the WHOLE window is one constant value (the original check), and
+    #  (b) the TRAILING readings — the ones that actually seed the forecast
+    #      origin — are one constant value spanning > STUCK_THRESHOLD_H. A
+    #      sensor that varied last week but froze two days ago must still
+    #      flag; the whole-window check alone missed exactly that case.
     if len(out) >= 2:
         out = out.sort_values("dateTime")
         time_gap_h = (
             (out["dateTime"].iloc[-1] - out["dateTime"].iloc[0]).total_seconds() / 3600
         )
-        unique_vals = out["value"].nunique()
-        if time_gap_h > STUCK_THRESHOLD_H and unique_vals == 1:
+        if time_gap_h > STUCK_THRESHOLD_H and out["value"].nunique() == 1:
             flags.append("stuck_sensor")
+        else:
+            # trailing run of identical values, scanned from the newest back
+            vals = out["value"].to_numpy()
+            i = len(vals) - 1
+            while i > 0 and vals[i - 1] == vals[-1]:
+                i -= 1
+            run_h = (
+                (out["dateTime"].iloc[-1] - out["dateTime"].iloc[i]).total_seconds() / 3600
+            )
+            if len(vals) - i >= 2 and run_h > STUCK_THRESHOLD_H:
+                flags.append("stuck_sensor")
 
     return out, flags
 

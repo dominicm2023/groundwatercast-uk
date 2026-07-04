@@ -391,19 +391,50 @@ _OP_MIN, _OP_MAX = 0.18, 0.9
 _OP_OBSERVED, _OP_ESTIMATED, _OP_NO_DATA = 0.92, 0.45, 0.55
 
 
-def _frame_days() -> list[int]:
-    """Approx. day-offset of each frame so the explorer can space the scrubber by
-    real elapsed time (weekly steps near, monthly steps far) rather than evenly."""
+def _seasonal_month_starts(seasonal_all: pd.DataFrame | None) -> list:
+    """The run's fleet-uniform seasonal month_start per month_ahead (1..N), for
+    real-days frame spacing. [] when there's no seasonal data."""
+    if seasonal_all is None or seasonal_all.empty \
+            or "month_start" not in seasonal_all.columns:
+        return []
+    firsts = (seasonal_all.dropna(subset=["month_start"])
+              .drop_duplicates("month_ahead").sort_values("month_ahead"))
+    return list(firsts["month_start"])
+
+
+def _frame_days(seasonal_month_starts: list | None = None,
+                now: pd.Timestamp | None = None) -> list[int]:
+    """Day-offset of each frame so the explorer can space the scrubber by real
+    elapsed time (weekly steps near, monthly steps far) rather than evenly.
+
+    The seasonal months are anchored AFTER the fan terminal (~2 weeks out), so
+    "Month 1" genuinely starts ~1.5-2.5 months ahead — when the run's actual
+    ``month_start`` dates are provided, each seasonal frame is placed at its
+    month MID-point in real days-ahead (the old 30*mi approximation put Month 1
+    at day 30 while its valid period began ~2 months out). Falls back to the
+    approximation when no seasonal data exists."""
+    starts = list(seasonal_month_starts or [])
+    now = pd.Timestamp(now if now is not None else pd.Timestamp.utcnow()) \
+        .tz_localize(None).normalize()
     days, fi, mi = [], 0, 0
     for _label, kind in TIMELINE_FRAMES:
         if kind == "fan":
             days.append(int(TIMELINE_FAN_LEADS[fi]))
             fi += 1
         elif kind == "seasonal":
+            off = None
+            if mi < len(starts) and starts[mi] is not None:
+                ms = pd.Timestamp(starts[mi])
+                ms = ms.tz_localize(None) if ms.tzinfo else ms
+                off = int((ms.normalize() - now).days + 14)   # month mid-point
+            days.append(off if off is not None and off > 0 else 30 * (mi + 1))
             mi += 1
-            days.append(30 * mi)
         else:  # now
             days.append(0)
+    # monotonic guard: a stale seasonal run must never place a month BEFORE the fan
+    for i in range(1, len(days)):
+        if days[i] <= days[i - 1]:
+            days[i] = days[i - 1] + 1
     return days
 
 
@@ -730,6 +761,20 @@ def build_pack(inputs: PackInputs, out_dir: Path, *,
     _dump({"type": "FeatureCollection", "features": features},
           building / "stations.geojson", pretty=pretty)
 
+    # Lightweight machine-readable catalogue (stations/index.json) — the geojson
+    # identity/flag fields without the heavy per-frame payload, for API
+    # consumers who just need "what stations exist and where". Additive (2026-07).
+    _dump([{
+        "station_id": f["properties"]["station_id"],
+        "slug": f["properties"]["slug"],
+        "name": f["properties"]["name"],
+        "lat": f["geometry"]["coordinates"][1],
+        "lon": f["geometry"]["coordinates"][0],
+        "aquifer_designation": f["properties"]["aquifer_designation"],
+        "has_forecast": f["properties"]["has_forecast"],
+        "has_seasonal": f["properties"]["has_seasonal"],
+    } for f in features], building / "stations" / "index.json", pretty=pretty)
+
     # Optional aquifer geology, copied verbatim (the explorer lazy-loads it).
     if inputs.geology_path is not None and inputs.geology_path.exists():
         shutil.copyfile(inputs.geology_path, building / "geology.geojson")
@@ -768,9 +813,36 @@ def build_pack(inputs: PackInputs, out_dir: Path, *,
         "disclaimer": DISCLAIMER,
         "history_days": history_days,
         "forecast_frames": [label for label, _ in TIMELINE_FRAMES],
-        "forecast_frame_days": _frame_days(),
+        "forecast_frame_days": _frame_days(_seasonal_month_starts(seasonal_all),
+                                           now=now_ts.tz_localize(None)),
     }
     _dump(meta, building / "meta.json", pretty=pretty)
+
+    # National status history — one row per pack build day (below/near/above
+    # counts over stations WITH a current status), appended to a small
+    # append-only store and shipped in the pack for the landing sparkline /
+    # any "X% below normal" headline. Additive contract file (2026-07).
+    nat_row = {
+        "date": iso_date(now_ts),
+        "below": sum(1 for f in features if f["properties"]["status"] == "below"),
+        "near": sum(1 for f in features if f["properties"]["status"] == "near"),
+        "above": sum(1 for f in features if f["properties"]["status"] == "above"),
+        "stations": len(features),
+        "with_forecast": n_forecast,
+    }
+    hist_store = out_dir.parent / "national_history.json"
+    nat_hist: list = []
+    if hist_store.exists():
+        try:
+            nat_hist = json.loads(hist_store.read_text(encoding="utf-8"))
+        except Exception:
+            nat_hist = []
+    nat_hist = [r for r in nat_hist if r.get("date") != nat_row["date"]] + [nat_row]
+    nat_hist = nat_hist[-730:]                      # two years is plenty
+    hist_store.write_text(json.dumps(nat_hist, separators=(",", ":")),
+                          encoding="utf-8")
+    _dump(nat_hist, building / "national_history.json", pretty=pretty)
+
     _dump(build_manifest(building), building / "manifest.json", pretty=pretty)
 
     # Two-rename swap. The old rmtree(out_dir)-then-rename left a multi-second

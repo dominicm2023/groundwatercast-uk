@@ -270,6 +270,32 @@ class TestMemberTrajectories:
         assert traj[traj.member == 0]["precip_mm"].iloc[0] == pytest.approx(2.0)
 
 
+class TestRecordHighSeedClip:
+    def test_record_seed_not_clamped_to_historical_ceiling(self, monkeypatch):
+        # BUGS.md low: gw_clip derives from HISTORY, but the live reseed can be
+        # a record level above hist max + 10% — the roll's step-1 clamp then
+        # pinned the fan at the historical ceiling, flattening exactly the
+        # breach-critical rising case. The clip must widen to include the seed.
+        from src.forecast.ensemble import gw_roll
+        import src.forecast.ensemble.members as M
+        hist = _history()
+        _, gw_clip_hist = gw_roll.station_guardrails(hist)
+        record = gw_clip_hist[1] + 3.0            # well above the old ceiling
+        fresh = pd.Series([record - 0.2, record],
+                          index=pd.to_datetime(["2026-06-05", "2026-06-06"]))
+        monkeypatch.setattr(M, "freshest_gw", lambda sid: fresh)
+        kernel = compute_weibull_kernel(1.8, 10.0, 45)
+        observed = pd.Series(2.0, index=pd.date_range("2026-04-01", "2026-06-06"))
+        dates = pd.to_datetime(["2026-06-07", "2026-06-08"])
+        members = pd.DataFrame([{"member": 0, "date": d, "precip_mm": 1.0}
+                                for d in dates])
+        traj = member_trajectories("s1", members, hist, kernel,
+                                   f_bh=1.0, observed_rain=observed)
+        day1 = traj[traj.date == dates[0]]["gw_pred"].iloc[0]
+        assert day1 > gw_clip_hist[1]             # NOT clamped to the old ceiling
+        assert abs(day1 - record) < 1.0           # still anchored near the seed
+
+
 # ---------------------------------------------------------------------------
 # observed_daily_rainfall — broken-gauge screen
 # ---------------------------------------------------------------------------

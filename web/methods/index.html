@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Methods — for researchers &amp; journalists | GroundwaterCast UK</title>
+  <meta name="description" content="How GroundwaterCast's forecasts are made, what they mean, what they don't, and how well they verify so far: data sources and licences, the per-borehole model, uncertainty, limitations, and how to cite or contact." />
+  <link rel="canonical" href="https://groundwatercast.com/methods/" />
+  <meta name="robots" content="index,follow,max-image-preview:large" />
+  <meta name="theme-color" content="#1a3a5c" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="GroundwaterCast UK" />
+  <meta property="og:title" content="Methods — how GroundwaterCast's forecasts are made" />
+  <meta property="og:description" content="Data sources, model, uncertainty, verification status and limitations — the canonical reference for researchers and journalists. Indicative, not a flood or drought warning." />
+  <meta property="og:url" content="https://groundwatercast.com/methods/" />
+  <meta property="og:image" content="https://groundwatercast.com/og/default.png" />
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/borehole.css" />
+  <link rel="stylesheet" href="/about.css" />
+</head>
+<body>
+  <header class="bore-top">
+    <a class="bore-brand" href="/"><span class="bore-logo">💧</span> GroundwaterCast&nbsp;UK</a>
+    <nav><a href="/explorer/">Explorer</a> <a href="/browse/">Browse</a> <a href="/about/">About</a> <a href="/methods/" aria-current="page">Methods</a></nav>
+  </header>
+
+  <div class="bore-wrap about-wrap">
+    <nav class="bore-crumb"><a href="/">← Home</a> / Methods</nav>
+    <h1 class="bore-h1">Methods &amp; limitations</h1>
+    <p class="bore-sub">The canonical reference for researchers, journalists and anyone
+      citing GroundwaterCast. Plain-English version on the <a href="/about/">About page</a>.</p>
+
+    <p class="bore-caveat">⚠ Everything on this site is an <b>indicative, uncalibrated
+      research forecast</b> — not a flood or drought warning, not for operational or
+      safety-critical use, England only. An independent open-source project, not
+      affiliated with or endorsed by any employer, the Environment Agency, ECMWF, or
+      any water company. For operational decisions use the
+      <a href="https://check-for-flooding.service.gov.uk/" rel="noopener">official EA services</a>.</p>
+
+    <section class="about-sec">
+      <h2>What is published, per borehole</h2>
+      <ul class="about-list">
+        <li><b>Current status vs normal</b> — the latest observed level placed on the
+          borehole's own per-calendar-month quantile ladder (P10 / tercile bounds /
+          median / P90, built from ≥5 years of monthly means of its own record); reported
+          as below / near / above normal with an interpolated percentile (clamped 2–98)
+          and the ladder-based Standardised Groundwater Index (SGI; a normal-scores
+          transform after Bloomfield &amp; Marchant, 2013).</li>
+        <li><b>14-day probabilistic forecast</b> — a P10/P50/P90 fan with the probability
+          of crossing a threshold within the operational 14-day window, plus the median
+          first-crossing date where members cross.</li>
+        <li><b>Seasonal outlook, months 1–6</b> — tercile probabilities of below / near /
+          above-normal groundwater. <b>Experimental.</b></li>
+      </ul>
+    </section>
+
+    <section class="about-sec">
+      <h2>How the forecast is made</h2>
+      <p>One transfer-function-noise model per borehole (a
+        <a href="https://pastas.readthedocs.io/" rel="noopener">Pastas</a> FlexModel
+        nonlinear-recharge model with a Gamma response and AR(1) noise), calibrated on
+        that borehole's full observed record with rainfall from its three nearest EA
+        gauges and FAO-56 reference evapotranspiration computed from ERA5. The
+        calibrated model is driven with each of the ECMWF ensemble's 51 members
+        (bias-corrected per borehole against local gauges) to produce the 14-day fan;
+        an independent reduced-form recharge "roll" model runs alongside as a
+        structural cross-check, and the mean disagreement between the two engines is
+        published per borehole ("methods agree/diverge").</p>
+      <p>The seasonal outlook is classic <b>ESP</b> (Ensemble Streamflow Prediction):
+        ~34 historic-year forcing traces cut from ERA5 are run through the same
+        calibrated model from the current state, weighted by ECMWF SEAS5 monthly
+        rainfall tercile probabilities (months 1–3). Groundwater's long memory — the
+        initial state — carries most of the seasonal signal; by months 4–6 the outlook
+        is best read as climatology conditioned on today's level. See
+        <a href="/about/">About</a> for the plain-English version of this argument.</p>
+    </section>
+
+    <section class="about-sec">
+      <h2>Verification status (honest numbers)</h2>
+      <p>The headline 14-day fan is <b>not yet verified</b>: a daily forecast archive
+        has been accruing since June 2026, and the first meaningful skill assessment
+        (CRPS / PIT / reliability against observed outcomes) needs a full recharge
+        season — expected <b>spring 2027</b>. Until then the "indicative /
+        uncalibrated" label stands everywhere.</p>
+      <p>What has been measured so far, on a leakage-safe hindcast of the simpler
+        cross-check engine (12 pilot boreholes, ~2,350 scored origin–lead pairs,
+        perfect-forecast rainfall): CRPS skill ≈ <b>+0.12 vs persistence</b> at leads
+        7–14 days and <b>+0.75–0.89 vs climatology</b>, with a spread/RMSE ratio of
+        ≈0.88 (the band runs slightly over-confident). These are partial, favourable-
+        condition numbers for the weaker of the two engines — quoted so the basis of
+        every claim is checkable, not as validation of the headline product.</p>
+    </section>
+
+    <section class="about-sec">
+      <h2>Known limitations</h2>
+      <ul class="about-list">
+        <li><b>Uncalibrated uncertainty.</b> The bands describe model spread, not a
+          verified probability; breach probabilities are member fractions.</li>
+        <li><b>Chalk-weighted validation.</b> The method was piloted on Hampshire
+          chalk; other aquifer types inherit the experimental tier until verified.</li>
+        <li><b>Summer skill is weakest</b> — recession-dominated, low-signal.</li>
+        <li><b>Sparse (monthly-dipped) boreholes</b> have weaker fits and wider bands;
+          the model-fit tail of the fleet explains little variance at some sites.</li>
+        <li><b>The seasonal outlook is experimental</b> and reverts toward
+          state-conditioned climatology beyond ~2–3 months; traces assume a
+          stationary climate (a known bias, on the roadmap).</li>
+        <li><b>Thresholds are mostly statistical proxies</b> (the borehole's own P90),
+          not operational trigger levels, and are labelled as such.</li>
+        <li><b>Coverage</b>: 687 of ~1,378 monitored boreholes carry the full
+          forecast; the rest show current status where a recent reading exists.</li>
+      </ul>
+    </section>
+
+    <section class="about-sec">
+      <h2>Data sources &amp; licences</h2>
+      <ul class="about-list">
+        <li><b>Environment Agency Hydrology API</b> — observed groundwater levels and
+          rain gauges (Open Government Licence v3.0).</li>
+        <li><b>ECMWF Open Data</b> — 51-member IFS ENS forcing (CC-BY-4.0).</li>
+        <li><b>Copernicus Climate Change Service</b> — ERA5 reanalysis and SEAS5
+          seasonal forecasts (modified C3S information).</li>
+        <li><b>BGS 625k bedrock geology</b> — indicative aquifer designation (OGL).</li>
+        <li><b>Cadence</b> — forecasts rebuilt daily (~06:30 UK); live levels refreshed
+          hourly where an EA telemetry feed exists; seasonal outlook monthly.</li>
+      </ul>
+    </section>
+
+    <section class="about-sec">
+      <h2>Reproducibility, citation &amp; contact</h2>
+      <p>The entire pipeline — data ingest, calibration, forecasting, verification and
+        this site — is open source (MIT) at
+        <a href="https://github.com/dominicm2023/groundwatercast-uk" rel="noopener">github.com/dominicm2023/groundwatercast-uk</a>,
+        and every number on the site is reproducible from the repository plus the open
+        data sources above. The published artifact pack (per-borehole JSON under
+        <code>/pack/</code>) is a documented, stable contract you are welcome to build
+        on with attribution.</p>
+      <p>To cite the site or data derived from it, please reference the repository
+        (a CITATION.cff is included) and state the access date — and keep the
+        indicative/uncalibrated caveat attached to any figure. For questions,
+        corrections or collaboration, open a GitHub issue.</p>
+    </section>
+
+    <p style="margin:22px 0 8px"><a class="about-back" href="/explorer/">Explore the map →</a>
+      &nbsp; <a class="about-back ghost" href="/about/">Plain-English About</a></p>
+  </div>
+
+  <footer class="bore-foot">
+    <p class="disclaimer"><b>Indicative, uncalibrated research forecast.</b> Not a
+      flood or drought warning; not for safety-critical use. England only.
+      Independent open-source project — not affiliated with or endorsed by any
+      employer, the Environment Agency, ECMWF, or any water company.</p>
+    <p class="caption">Contains EA data (OGL v3) · ECMWF Open Data (CC-BY-4.0) ·
+      Copernicus ERA5/SEAS5 · BGS 625k geology (OGL) · Free &amp; open source (MIT).</p>
+  </footer>
+</body>
+</html>

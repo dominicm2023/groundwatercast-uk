@@ -67,6 +67,29 @@ class TestApplyQC:
         # Rows are not dropped, just flagged
         assert len(out) == 10
 
+    def test_recently_frozen_tail_flags(self):
+        # BUGS.md low: a sensor that VARIED earlier but froze for the trailing
+        # >24h (the readings that seed the forecast) must flag — the old
+        # whole-window nunique==1 check missed exactly this case.
+        idx = pd.date_range("2026-05-01", periods=8, freq="12h", tz="UTC")
+        df = pd.DataFrame({
+            "dateTime": idx,
+            "value": [10.0, 10.2, 10.4, 10.3, 9.9, 9.9, 9.9, 9.9],  # frozen 36h tail
+        })
+        out, flags = apply_qc(df, historical_mean=10.0, historical_std=1.0)
+        assert "stuck_sensor" in flags
+        assert len(out) == 8                       # advisory only, nothing dropped
+
+    def test_short_frozen_tail_does_not_flag(self):
+        # a repeat inside 24h is normal telemetry, not a freeze
+        idx = pd.date_range("2026-05-01", periods=6, freq="6h", tz="UTC")
+        df = pd.DataFrame({
+            "dateTime": idx,
+            "value": [10.0, 10.2, 10.4, 10.3, 9.9, 9.9],   # 6h identical tail
+        })
+        _, flags = apply_qc(df, historical_mean=10.0, historical_std=1.0)
+        assert "stuck_sensor" not in flags
+
     def test_empty_input(self):
         df = pd.DataFrame(columns=["dateTime", "value"])
         out, flags = apply_qc(df, historical_mean=0.0, historical_std=1.0)

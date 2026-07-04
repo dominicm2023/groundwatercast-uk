@@ -169,3 +169,5 @@ a.card:hover {
   .cards.three { grid-template-columns: 1fr; }
   .site-brand .tagline { display: none; }
 }
+
+.stat-pill .stat-spark { display: inline-flex; align-items: center; margin-left: 6px; }

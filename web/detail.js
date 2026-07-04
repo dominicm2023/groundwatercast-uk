@@ -370,7 +370,7 @@
       ).join("");
       out.push(`<div class="fan-controls"><span class="range-label">History</span>${btns}</div>`);
       out.push(`<div class="fan-host">${C.fanChart(detail, { historyDays: initDays, levels: triggerLevels(detail), large: onBoreholePage })}</div>`);
-      out.push(`<p class="caption">Observed history (dark) → ${hLabel}-day P10/P50/P90 forecast fan (blue), continuing as a monthly seasonal outlook (circles, with P10–P90 whiskers). Red dashed = breach threshold. ${onBoreholePage ? "Hover, or drag the timeline below, for values." : "Hover for values."}</p>`);
+      out.push(`<p class="caption">Observed history (dark) → ${hLabel}-day P10/P50/P90 forecast fan (blue), continuing as a monthly seasonal outlook — each circle coloured by that month's most-likely tercile (matching the map: amber below / grey near / blue above normal) with P10–P90 whiskers. Red dashed = breach threshold. ${onBoreholePage ? "Hover, or drag the timeline below, for values." : "Hover for values."}</p>`);
       // Standalone page: a draggable timeline scrubber with a live value readout
       // (bindFan wires it to the chart's scrub API). Discoverable + touch-friendly.
       if (onBoreholePage) {
@@ -384,11 +384,30 @@
       let metrics = row("Tier", tier) + row("Breach prob (14 d)", pct(fc.p_breach_14d));
       if (fc.first_cross_median)
         metrics += row("Median first crossing", prettyDate(fc.first_cross_median));
+      // Two-method cross-check chip: the mean Pastas-vs-roll disagreement is
+      // already published (model_spread_mean); surface it as agree/diverge —
+      // structural DISAGREEMENT between independent engines, never an error bar.
+      if (fc.model_spread_mean != null && isFinite(fc.model_spread_mean)) {
+        const sp = Math.abs(+fc.model_spread_mean);
+        const agree = sp < 0.10 ? ["agree", "two independent methods land within 10 cm"]
+          : sp < 0.30 ? ["broadly-agree", `two independent methods differ by ~${Math.round(sp * 100)} cm on average`]
+            : ["diverge", `two independent methods differ by ~${fmt1(sp)} m — treat the band with extra caution`];
+        metrics += row("Cross-check", `<span class="xchk xchk-${agree[0]}" title="${esc(agree[1])}">` +
+          (sp < 0.30 ? "methods agree" : "methods diverge") + ` (±${fmt1(sp)} m)</span>`);
+      }
+      // Censored-fraction framing: pair the breach probability with how many
+      // sampled scenarios NEVER reach the level in the window (honesty framing
+      // for small probabilities — "0%" means no member crossed, not impossible).
+      let censoredNote = "";
+      if (fc.threshold != null && fc.censored_frac != null && isFinite(fc.censored_frac)) {
+        censoredNote = `<p class="caption">${pct(fc.censored_frac)} of sampled scenarios ` +
+          `never reach ${fmt1(fc.threshold)} mAOD inside the forecast window.</p>`;
+      }
       if (onBoreholePage) {
         out.push(`</div>`);                      // close the fan lead card…
-        fcDetailCard = pageCard("Forecast detail", metrics);   // …metrics become a grid card
+        fcDetailCard = pageCard("Forecast detail", metrics + censoredNote);   // …metrics become a grid card
       } else {
-        out.push(`<div style="margin-top:10px">${metrics}</div></div>`);
+        out.push(`<div style="margin-top:10px">${metrics}${censoredNote}</div></div>`);
       }
     }
 

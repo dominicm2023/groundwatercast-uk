@@ -97,12 +97,20 @@ def segments(frame: pd.DataFrame) -> list[tuple[str, pd.DataFrame]]:
             for k, g in frame.groupby("year_key") if not g.empty]
 
 
-def daily_envelope(aligned: pd.DataFrame) -> pd.DataFrame:
-    """Per-axis_day P10/P50/P90 across ALL years (the 'normal range').
-    Days observed in fewer than 3 years are dropped (an envelope from one
-    or two values isn't an envelope)."""
+def daily_envelope(aligned: pd.DataFrame,
+                   exclude_year: str | None = None) -> pd.DataFrame:
+    """Per-axis_day P10/P50/P90 across past years (the 'normal range').
+    ``exclude_year`` drops the in-progress alignment year — its own values
+    must not contribute to the envelope it is being judged against (the
+    past-year overlay and available_years already exclude it). Days observed
+    in fewer than 3 years are dropped (an envelope from one or two values
+    isn't an envelope)."""
     if aligned.empty:
         return pd.DataFrame(columns=["axis_day", "p10", "p50", "p90"])
+    if exclude_year is not None:
+        aligned = aligned[aligned["year_key"] != exclude_year]
+        if aligned.empty:
+            return pd.DataFrame(columns=["axis_day", "p10", "p50", "p90"])
     g = aligned.groupby("axis_day")["value"]
     out = pd.DataFrame({
         "n": g.count(),
@@ -142,7 +150,7 @@ def season_figure(shard: pd.Series, fan_median: pd.Series | None,
     current = year_label(anchor, alignment)
 
     if show_envelope and not aligned.empty:
-        env = daily_envelope(aligned)
+        env = daily_envelope(aligned, exclude_year=current)
         if not env.empty:
             fig.add_trace(go.Scatter(x=env["axis_day"], y=env["p90"],
                                      mode="lines", line=dict(width=0),
@@ -250,7 +258,7 @@ def render_season_view(sid: str, fsub: pd.DataFrame,
                         today=shard.index.max())
     st.plotly_chart(fig, width="stretch", key=f"{key_prefix}_{sid[:8]}")
     st.caption("Grey = selected previous years · band = historical P10–P90 "
-               "(all years) · black = this year observed · blue = forecast "
+               "(past years — this year excluded) · black = this year observed · blue = forecast "
                "median · dotted circles = seasonal monthly means "
                "(experimental). Years aligned by "
                + ("water year (Oct–Sep)." if alignment == WATER

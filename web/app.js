@@ -158,16 +158,20 @@
         playBtn.setAttribute("aria-pressed", "false");
         playBtn.setAttribute("aria-label", "Play forecast timeline");
       };
+      const reduceMotion = window.matchMedia
+        && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       playBtn.addEventListener("click", () => {
         if (timer) { stop(); return; }
         playBtn.textContent = "⏸";                 // ⏸
         playBtn.setAttribute("aria-pressed", "true");
         playBtn.setAttribute("aria-label", "Pause forecast timeline");
         if (curFrame >= FRAMES.length - 1) { curFrame = 0; setFrame(0); setThumb(0); }
+        // reduced motion: playback stays available (user-initiated) but steps
+        // at half speed so the map recolouring isn't a rapid flicker
         timer = setInterval(() => {
           const next = curFrame >= FRAMES.length - 1 ? 0 : curFrame + 1;
           curFrame = next; setFrame(next); setThumb(next);
-        }, 850);
+        }, reduceMotion ? 1700 : 850);
       });
       slider.addEventListener("input", stop);           // manual scrub cancels playback
     }
@@ -256,7 +260,7 @@
       },
     });
 
-    map.on("click", "stations-dot", (e) => selectFeature(e.features[0]));
+    map.on("click", "stations-dot", (e) => selectFeature(e.features[0], { focus: true }));
     map.on("mouseenter", "stations-dot", () => (map.getCanvas().style.cursor = "pointer"));
     map.on("mouseleave", "stations-dot", () => (map.getCanvas().style.cursor = ""));
 
@@ -288,8 +292,12 @@
     state.bh = bhKeyFor(feature);
     Hash.write();
     if (opts.flyTo && feature.geometry && feature.geometry.type === "Point") {
-      map.flyTo({ center: feature.geometry.coordinates,
-                  zoom: Math.max(map.getZoom(), 9) });
+      // prefers-reduced-motion: jump, don't animate
+      const reduce = window.matchMedia
+        && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const view = { center: feature.geometry.coordinates,
+                     zoom: Math.max(map.getZoom(), 9) };
+      if (reduce) { map.jumpTo(view); } else { map.flyTo(view); }
     }
     map.setFilter("stations-selected", ["==", ["get", "station_id"], id]);
     const panel = document.getElementById("detail");
@@ -301,6 +309,13 @@
 
     const render = (d) => {
       body.innerHTML = window.GWC_DETAIL.render(d, META, { range: state.range });
+      // a11y: move focus to the detail panel and announce the selection so
+      // screen-reader users hear where they landed (panel content replaced).
+      panel.setAttribute("aria-label", `Details for ${d.station && (d.station.name || d.station.station_id) || "selected borehole"}`);
+      if (opts.focus) {
+        panel.setAttribute("tabindex", "-1");
+        panel.focus({ preventScroll: false });
+      }
       window.GWC_DETAIL.bindFan(body, d);
       window.GWC_DETAIL.bindData(body);
       // (re)wire the watchlist pin control every render — it lives in the
@@ -509,6 +524,23 @@
     const n = meta.counts || {};
     document.getElementById("data-asof").textContent =
       `${n.stations || 0} boreholes · ${n.with_forecast || 0} forecasts · data as of ${asof}`;
+    // National one-liner ("Next up" #2): % below normal today, over stations
+    // WITH a current status — honest denominator, mirrors the landing hero.
+    fetch(`${PACK}/national_history.json`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((hist) => {
+        if (!hist || !hist.length) return;
+        const t = hist[hist.length - 1];
+        const withStatus = (t.below || 0) + (t.near || 0) + (t.above || 0);
+        if (!withStatus) return;
+        const el = document.getElementById("national-note");
+        if (el) {
+          el.textContent = `${Math.round((t.below / withStatus) * 100)}% of ` +
+            `boreholes with a current reading are below normal`;
+          el.hidden = false;
+        }
+      })
+      .catch(() => {});
     document.getElementById("about-disclaimer").textContent = meta.disclaimer || "";
     // Honest coverage context (pre-empts "is this just a demo?"): published =
     // boreholes with usable observations; the rest of the catalogue has no

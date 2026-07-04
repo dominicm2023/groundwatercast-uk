@@ -165,3 +165,21 @@ class TestFigure:
                                alignment=sv.CALENDAR, years=[],
                                today=pd.Timestamp("2026-06-12"))
         assert len(fig.data) == 0
+
+
+class TestEnvelopeExcludesCurrentYear:
+    def test_current_year_values_do_not_shape_the_band(self):
+        # BUGS.md low: the in-progress year's own observations must not
+        # contribute to the "historical P10-P90" band it is judged against.
+        import pandas as pd
+        from src.dashboard.season_view import align_series, daily_envelope, year_label
+        idx = pd.date_range("2020-01-01", "2026-06-30", freq="D")
+        vals = pd.Series(10.0, index=idx)
+        vals[idx.year == 2026] = 99.0                # wild current-year excursion
+        aligned = align_series(vals, "calendar")
+        current = year_label(pd.Timestamp("2026-06-30"), "calendar")
+        env_excl = daily_envelope(aligned, exclude_year=current)
+        assert not env_excl.empty
+        assert float(env_excl["p90"].max()) == 10.0  # excursion excluded
+        env_incl = daily_envelope(aligned)           # legacy behaviour intact
+        assert float(env_incl["p90"].max()) > 10.0

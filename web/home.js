@@ -128,6 +128,38 @@
     }).join("");
   }
 
+  // Tiny "% below normal" sparkline in the hero once >=7 days of national
+  // history have accrued (pack/national_history.json, one row per build day).
+  function renderTrend() {
+    fetch(PACK + "/national_history.json")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (hist) {
+        if (!hist || hist.length < 7) return;   // wait for a real week of data
+        var pcts = hist.map(function (t) {
+          var w = (t.below || 0) + (t.near || 0) + (t.above || 0);
+          return w ? (t.below / w) * 100 : null;
+        }).filter(function (v) { return v != null; });
+        if (pcts.length < 7) return;
+        pcts = pcts.slice(-90);
+        var lo = Math.min.apply(null, pcts), hi = Math.max.apply(null, pcts);
+        if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
+        var W = 120, H = 26, n = pcts.length;
+        var pts = pcts.map(function (v, i) {
+          return (i / (n - 1) * W).toFixed(1) + "," +
+            ((1 - (v - lo) / (hi - lo)) * (H - 4) + 2).toFixed(1);
+        }).join(" ");
+        var host = document.getElementById("national-stat");
+        if (!host || host.hidden) return;
+        var span = document.createElement("span");
+        span.className = "stat-spark";
+        span.title = "% of boreholes below normal, last " + n + " days";
+        span.innerHTML = '<svg viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '">' +
+          '<polyline points="' + pts + '" fill="none" stroke="#d4a017" stroke-width="2"/></svg>';
+        host.appendChild(span);
+      })
+      .catch(function () {});
+  }
+
   fetch(PACK + "/stations.geojson")
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(function (gj) {
@@ -140,6 +172,7 @@
       renderStat(counts, feats.length);
       initMap(gj);
       renderNotable(feats);
+      renderTrend();
       var lab = document.getElementById("hero-map-lab");
       if (lab) {
         var ws = counts.below + counts.near + counts.above;

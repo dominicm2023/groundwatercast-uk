@@ -455,3 +455,14 @@ a.brand, a.brand:hover { color: #fff; text-decoration: none; }
   cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .tl-play:hover { background: #eef5fb; }
 .tl-play[aria-pressed="true"] { background: #1f6fb2; color: #fff; border-color: #1f6fb2; }
+
+/* two-method cross-check chip (model_spread_mean): structural agreement of the
+   two independent engines — wording is agree/diverge, never an error bar */
+.xchk { font-size: 0.8rem; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+.xchk-agree { background: #e3f0e4; color: #2e7d32; }
+.xchk-broadly-agree { background: #eef3f8; color: #1a3a5c; }
+.xchk-diverge { background: #fdebcf; color: #a35a00; }
+
+/* national one-liner in the explorer topbar */
+.national-note { color: #ffd77a; }
+@media (max-width: 900px) { .national-note { display: none; } }

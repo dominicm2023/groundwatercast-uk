@@ -136,6 +136,16 @@
     // seasonal monthly P50: a dotted connector (continuing from the end of the
     // daily fan) through coarse monthly circles — coarse markers = monthly
     // means, not daily levels.
+    // Most-likely tercile per month — colours the P50 circle to match the map
+    // vocabulary (below=amber / near=grey / above=blue). Null probs → neutral.
+    const tercileOf = (s) => {
+      const probs = { below: s.p_below, near: s.p_near, above: s.p_above };
+      let best = null, bv = -1;
+      for (const k in probs) {
+        if (probs[k] != null && isFinite(probs[k]) && probs[k] > bv) { bv = probs[k]; best = k; }
+      }
+      return best;
+    };
     const seasPts = seas
       .filter((s) => s.gw_p50 != null && s.month_start)
       .map((s) => ({
@@ -143,6 +153,7 @@
         y: Y(s.gw_p50),
         y10: s.gw_p10 != null ? Y(s.gw_p10) : null,
         y90: s.gw_p90 != null ? Y(s.gw_p90) : null,
+        tc: tercileOf(s),
       }));
     if (seasPts.length) {
       // P10–P90 whiskers: seasonal uncertainty, legitimately tight in the near
@@ -164,9 +175,13 @@
       linePts.push(...seasPts.map((p) => ({ x: p.x, y: p.y })));
       const pl = linePts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
       parts.push(`<polyline points="${pl}" fill="none" stroke="${PAL.above}" stroke-width="1" stroke-dasharray="2 3" stroke-opacity="0.55"/>`);
-      // P50 circles (white-filled so they read cleanly over the whiskers)
-      seasPts.forEach((p) =>
-        parts.push(`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.4" fill="#fff" stroke="${PAL.above}" stroke-width="1.1"/>`));
+      // P50 circles — stroked in the month's most-likely tercile colour (the
+      // map vocabulary: amber below / grey near / blue above), white-filled so
+      // they read cleanly over the whiskers. Neutral blue when probs are null.
+      seasPts.forEach((p) => {
+        const col = (p.tc && PAL[p.tc]) || PAL.above;
+        parts.push(`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${large ? 3.6 : 2.4}" fill="#fff" stroke="${col}" stroke-width="${large ? 1.8 : 1.4}"/>`);
+      });
     }
 
     // markers: the last real reading (nowcast anchor) and "today" (forecast

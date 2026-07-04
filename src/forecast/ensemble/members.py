@@ -155,6 +155,16 @@ def member_trajectories(station_id: str, members_df: pd.DataFrame,
     hist = history.sort_index()
     dgw_clip, gw_clip = gw_roll.station_guardrails(hist)
     seed_gw, seed_dgw = _seed_gw_dgw(hist, freshest_gw(station_id))
+    # The guardrail is derived from HISTORY, but the live reseed can sit at a
+    # record level outside it — the roll's step-1 clamp would then immediately
+    # clip a record-high seed back to the historical ceiling, flattening the
+    # fan in exactly the breach-critical rising case the reseed exists to
+    # capture. Widen the clip so the seed always starts inside it, with 10% of
+    # the historical range as extra headroom in the seed's direction.
+    if seed_gw is not None and np.isfinite(seed_gw):
+        margin = 0.1 * (gw_clip[1] - gw_clip[0])
+        gw_clip = (min(gw_clip[0], seed_gw - margin),
+                   max(gw_clip[1], seed_gw + margin))
     params = gw_roll.fit(method, hist)
 
     forecast_dates = pd.DatetimeIndex(sorted(members_df["date"].unique()))

@@ -32,6 +32,7 @@ window.GWC_CONTRACT = {
     "forecast.threshold", "forecast.threshold_source", "forecast.p_breach",
     "forecast.p_breach_14d", "forecast.p_above_p90_14d",
     "forecast.first_cross_median", "forecast.first_cross_median_lead",
+    "forecast.model_spread_mean", "forecast.censored_frac",
     "forecast.gw_p50_end", "forecast.tier", "forecast.headline",
     "forecast.fan",
     "fan.lead", "fan.date", "fan.p10", "fan.p50", "fan.p90", "fan.segment",

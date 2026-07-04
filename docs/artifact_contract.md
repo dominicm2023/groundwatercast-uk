@@ -42,6 +42,8 @@ repo-versioned surfaces — see `docs/product/product_definition.md` §4.2.)
 | `manifest.json` | Integrity: `{file → {sha256, bytes}}` for every other file (including `meta.json`). |
 | `stations.geojson` | FeatureCollection — one Feature per published station. The map index. |
 | `stations/<station_id>.json` | Per-station detail (status, normals, observed history, forecast, seasonal). |
+| `stations/index.json` | Lightweight catalogue: `station_id`, `slug`, `name`, `lat`, `lon`, `aquifer_designation`, `has_forecast`, `has_seasonal` per published station — the geojson identities without the heavy payload. |
+| `national_history.json` | One row per pack-build day: `date`, `below`/`near`/`above` counts (stations WITH a current status), `stations`, `with_forecast`. Append-only (capped 730 days). |
 
 **Which stations are published**: catalogued groundwater stations that have
 observation data (a per-station shard) or a forecast, minus the curated
@@ -240,3 +242,4 @@ Status-only station detail (abridged):
 | `1.0` | 2026-06-17 | Additive (no bump): `meta.coverage` block (catalogued / observed / with_forecast / no_data / excluded / live_capable) — network-coverage audit disclosure |
 | `1.0` | 2026-06-20 | Additive (no bump): `st_seq` / `op_seq` geojson props + `meta.forecast_frames` / `meta.forecast_frame_days` — forecast-timeline scrubber (recolour the map through Today → +2 wk → Months 1–6; slider spaced by real elapsed time) |
 | `1.0` | 2026-07-01 | Additive (no bump): `slug` on geojson props + `detail.station` — the canonical `/b/<slug>/` page path, assigned once at pack build so duplicate-named stations can never link to the wrong page |
+| `1.0` | 2026-07-04 | Additive (no bump): `stations/index.json` (lightweight catalogue) + `national_history.json` (daily national below/near/above counts). `meta.forecast_frame_days` seasonal offsets now use the run's REAL `month_start` mid-points (was a 30·mi approximation that placed "Month 1" ~a month earlier than its valid period) — a semantic accuracy fix within the documented "approximate spacing" contract. |

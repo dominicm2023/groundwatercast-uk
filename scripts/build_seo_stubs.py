@@ -417,6 +417,7 @@ def build(pack_dir: Path = PACK_DIR, out_dir: Path = OUT_DIR, today: str | None 
     entries: list[tuple] = []                                  # (slug, name, region)
     # home + top-level pages + directory (all editorial, always fresh-dated)
     urls = [(f"{SITE}/", today), (f"{SITE}/about/", today),
+            (f"{SITE}/methods/", today),
             (f"{SITE}/explorer/", today), (f"{SITE}/browse/", today)]
     n = noindex = noregion = 0
     problems: list[str] = []
