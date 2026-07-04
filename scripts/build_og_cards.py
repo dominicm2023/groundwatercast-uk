@@ -153,7 +153,11 @@ def build(pack_dir: Path = PACK_DIR, out_dir: Path = OUT_DIR,
     manifest: dict[str, str] = {}
     n = reused = 0
     for fp in sorted(pack_dir.glob("*.json")):
+        if fp.name == "index.json":
+            continue                     # the stations/index.json catalogue, not a station
         d = json.loads(fp.read_text(encoding="utf-8"))
+        if not isinstance(d, dict):
+            continue                     # defensive: only station detail dicts
         stn = d.get("station") or {}
         sid = stn.get("station_id")
         name = stn.get("name") or sid

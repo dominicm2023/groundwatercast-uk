@@ -75,6 +75,9 @@ def test_build_smoke(tmp_path):
     pack = tmp_path / "pack"
     pack.mkdir()
     (pack / "a.json").write_text(json.dumps(SAMPLE), encoding="utf-8")
+    # the stations/index.json catalogue (a LIST) lives in the same dir — both
+    # builders must skip it, not crash on d.get() (regression: 2026-07-05 VPS)
+    (pack / "index.json").write_text(json.dumps([{"station_id": "x"}]), encoding="utf-8")
     bare = {"station": {"station_id": "deadbeef-0000", "name": "Empty BH",
                         "lat": 52.0, "lon": -1.0}, "observed": {"series": []}}
     (pack / "b.json").write_text(json.dumps(bare), encoding="utf-8")
