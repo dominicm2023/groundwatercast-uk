@@ -54,6 +54,8 @@ data/model/
 models/
 outputs/
 web/b/
+web/og/
+web/apple-touch-icon.png
 web/browse/
 web/sitemap.xml
 web/robots.txt

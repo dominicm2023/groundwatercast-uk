@@ -177,11 +177,13 @@ def test_publish_is_last_stage():
     # so the order must be ...build_artifact_pack -> build_seo_stubs (last, so a
     # stub failure can't undo the published pack).
     assert ALL_NAMES[-1] == "build_seo_stubs"
-    assert ALL_NAMES[-2] == "build_artifact_pack"
+    assert ALL_NAMES[-2] == "build_og_cards"      # cards render BEFORE the stubs embed them
+    assert ALL_NAMES[-3] == "build_artifact_pack"
     plan = [s.name for s in select_stages(["forecast", "publish"])]
     assert plan[-1] == "build_seo_stubs"
     assert plan.index("build_pastas_summary") < plan.index("build_artifact_pack")
-    assert plan.index("build_artifact_pack") < plan.index("build_seo_stubs")
+    assert plan.index("build_artifact_pack") < plan.index("build_og_cards")
+    assert plan.index("build_og_cards") < plan.index("build_seo_stubs")
 
 
 def test_publish_runs_in_main_env():

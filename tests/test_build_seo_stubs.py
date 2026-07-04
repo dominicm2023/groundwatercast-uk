@@ -81,7 +81,8 @@ def test_build_smoke(tmp_path):
     web = tmp_path / "web"
     out = web / "b"
     store = tmp_path / "lastmod.json"
-    stats = B.build(pack, out, today="2026-06-30", lastmod_store=store)   # raises on self-check failure
+    stats = B.build(pack, out, today="2026-06-30", lastmod_store=store,
+                    og_manifest=tmp_path / "no-cards.json")   # raises on self-check failure
     assert stats["stubs"] == 2
     assert stats["noindex"] == 1          # the empty borehole
     assert (out / "wilgate-green" / "index.html").exists()
@@ -103,7 +104,8 @@ def test_build_smoke(tmp_path):
     aged = json.loads(json.dumps(SAMPLE))
     aged["status"]["obs_age_days"] = 48        # five days later, no new reading
     (pack / "a.json").write_text(json.dumps(aged), encoding="utf-8")
-    B.build(pack, out, today="2026-07-05", lastmod_store=store)
+    B.build(pack, out, today="2026-07-05", lastmod_store=store,
+            og_manifest=tmp_path / "no-cards.json")
     sm2 = (web / "sitemap.xml").read_text(encoding="utf-8")
     assert "<lastmod>2026-06-30</lastmod>" in sm2   # carried forward, not bumped to 07-05
 
@@ -116,7 +118,8 @@ def test_pack_slug_is_authoritative(tmp_path):
     d["station"]["slug"] = "wilgate-green-7b1f7f"    # collision-suffixed upstream
     (pack / "a.json").write_text(json.dumps(d), encoding="utf-8")
     out = tmp_path / "web" / "b"
-    B.build(pack, out, today="2026-06-30", lastmod_store=tmp_path / "lm.json")
+    B.build(pack, out, today="2026-06-30", lastmod_store=tmp_path / "lm.json",
+            og_manifest=tmp_path / "no-cards.json")
     assert (out / "wilgate-green-7b1f7f" / "index.html").exists()
     assert not (out / "wilgate-green").exists()
 

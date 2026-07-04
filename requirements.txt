@@ -32,3 +32,4 @@ cdsapi         # ERA5 daily met via Copernicus CDS (W4; needs a free CDS key)
 # (the `.venv-grib` pattern, mirroring `.venv-pastas`).
 xarray         # synthetic-Dataset GRIB tests + optional providers; CDS NetCDF reads
 netcdf4        # xarray engine for the CDS ERA5 daily-statistics NetCDF responses (W4)
+resvg-py>=0.3           # OG share-card rendering (scripts/build_og_cards.py)

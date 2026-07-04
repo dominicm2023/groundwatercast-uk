@@ -208,6 +208,13 @@ STAGES = (
           ("-m", "scripts.build_artifact_pack"), "publish", MAIN_ENV,
           "assemble outputs/pack (geojson + per-station JSON) from existing artefacts; pure-read"),
 
+    # -- OG share cards [step 10b]: status-neutral 1200x630 PNGs per borehole,
+    #    content-hash filenames + manifest. BEFORE the stubs (they embed the
+    #    og:image URLs). Soft-skips (exit 0, no manifest) when resvg_py absent.
+    Stage("build_og_cards", "10b",
+          ("-m", "scripts.build_og_cards"), "publish", MAIN_ENV,
+          "render per-borehole OG share cards + manifest (pure-read, AFTER 10, BEFORE 11)"),
+
     # -- SEO stubs [step 11]: per-borehole static pages + /browse + sitemap +
     #    robots, from the pack. Pure read; runs LAST so a stub issue can't undo
     #    the already-written pack (the chain aborts after it, not before).

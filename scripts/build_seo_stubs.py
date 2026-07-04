@@ -39,6 +39,7 @@ BROWSE_DIR = _ROOT / "web" / "browse"
 SITEMAP_PATH = _ROOT / "web" / "sitemap.xml"
 ROBOTS_PATH = _ROOT / "web" / "robots.txt"
 LASTMOD_STORE = _ROOT / "outputs" / "seo_lastmod.json"   # {slug: {hash, lastmod}} — anti-churn
+OG_MANIFEST = _ROOT / "outputs" / "og_cards.json"        # {slug: share.<hash>.png} from build_og_cards
 CAVEAT = "Indicative, experimental — not a flood or drought warning. England only."
 _REQUIRED_TYPES = {"WebSite", "WebPage", "Dataset", "Place"}
 
@@ -212,7 +213,7 @@ def _jsonld(d, sl, region, last_date):
     return json.dumps(graph, separators=(",", ":"), ensure_ascii=False).replace("</", "<\\/")
 
 
-def _head(d, sl, region, indexable):
+def _head(d, sl, region, indexable, card: str | None = None):
     stn = d.get("station") or {}
     name = stn.get("name") or stn.get("station_id") or "borehole"
     status_label = STATUS_LABEL.get((d.get("status") or {}).get("status"), "no current status")
@@ -220,9 +221,19 @@ def _head(d, sl, region, indexable):
     rparen = f" ({region})" if region else ""        # description / og:title
     jl = _jsonld(d, sl, region, last_data_date(d))
     robots = "index,follow,max-image-preview:large" if indexable else "noindex,follow"
-    # NB: og:image / twitter:image are added by the card builder (build_og_cards),
-    # a later step — omitted here so the build-time self-check never points at a
-    # missing PNG.
+    # og:image: the status-NEUTRAL share card rendered by build_og_cards (the
+    # stage before this one), addressed by content-hash filename so scraper
+    # caches bust exactly when the card really changed. Omitted when the card
+    # builder didn't run (no resvg) — never a broken URL.
+    og_image = (
+        f'<meta property="og:image" content="{SITE}/b/{esc(sl)}/{esc(card)}">'
+        '<meta property="og:image:width" content="1200">'
+        '<meta property="og:image:height" content="630">'
+        f'<meta property="og:image:alt" content="GroundwaterCast share card for '
+        f'{esc(name)}: observed groundwater sparkline — indicative, not a flood or '
+        'drought warning">'
+        f'<meta name="twitter:image" content="{SITE}/b/{esc(sl)}/{esc(card)}">'
+    ) if card else ""
     return (
         '<meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -246,11 +257,12 @@ def _head(d, sl, region, indexable):
         f'<meta name="twitter:title" content="Groundwater at {esc(name)}{esc(rparen)} (indicative)">'
         '<meta name="twitter:description" content="Experimental 14-day open-data outlook — not a '
         'flood/drought warning. England only.">'
+        + og_image +
         f'<script type="application/ld+json">{jl}</script>'
     )
 
 
-def _page(d, sl, region, indexable):
+def _page(d, sl, region, indexable, card: str | None = None):
     stn = d.get("station") or {}
     sid = stn.get("station_id")
     name = stn.get("name") or sid or "Borehole"
@@ -264,7 +276,7 @@ def _page(d, sl, region, indexable):
     crumb = ('<a href="/">Home</a> / <a href="/explorer/">Map</a> / <a href="/browse/">Browse</a> / '
              + (f"{esc(region)} / " if region else "") + esc(name))
     return (
-        '<!DOCTYPE html><html lang="en-GB"><head>' + _head(d, sl, region, indexable) + "</head><body>"
+        '<!DOCTYPE html><html lang="en-GB"><head>' + _head(d, sl, region, indexable, card) + "</head><body>"
         '<header class="bore-top"><a class="bore-brand" href="/"><span class="bore-logo">💧</span> '
         'GroundwaterCast&nbsp;UK</a><nav><a href="/explorer/">Explorer</a> <a href="/browse/">Browse</a> '
         '<a href="/about/">About</a></nav></header>'
@@ -336,6 +348,9 @@ def _mini_shell(title, canonical, body):
         f'<title>{esc(title)}</title>'
         f'<link rel="canonical" href="{canonical}">'
         '<meta name="robots" content="index,follow"><meta name="theme-color" content="#1a3a5c">'
+        f'<meta property="og:title" content="{esc(title)}">'
+        f'<meta property="og:url" content="{canonical}">'
+        f'<meta property="og:image" content="{SITE}/og/default.png">'
         '<link rel="icon" type="image/svg+xml" href="/favicon.svg">'
         '<link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/borehole.css">'
         '</head><body>'
@@ -375,8 +390,17 @@ def _sitemap_xml(urls):
 
 
 def build(pack_dir: Path = PACK_DIR, out_dir: Path = OUT_DIR, today: str | None = None,
-          lastmod_store: Path = LASTMOD_STORE) -> dict:
+          lastmod_store: Path = LASTMOD_STORE,
+          og_manifest: Path = OG_MANIFEST) -> dict:
     today = today or date.today().isoformat()
+    # Share-card manifest from build_og_cards (the stage before this one) —
+    # {slug: share.<hash>.png}. Absent (no resvg on the box) => no og:image.
+    cards: dict[str, str] = {}
+    if og_manifest.exists():
+        try:
+            cards = json.loads(og_manifest.read_text(encoding="utf-8")).get("cards", {})
+        except Exception:
+            cards = {}
     out_dir.mkdir(parents=True, exist_ok=True)
     web_dir = out_dir.parent
     browse_dir = web_dir / "browse"
@@ -417,7 +441,12 @@ def build(pack_dir: Path = PACK_DIR, out_dir: Path = OUT_DIR, today: str | None 
         indexable = bool((d.get("observed") or {}).get("series"))   # noindex zero-observation stubs
         if not indexable:
             noindex += 1
-        html = _page(d, sl, region, indexable)
+        card = cards.get(sl)
+        if card and not (out_dir / sl / card).exists():
+            # never publish an og:image that would 404 (spec self-check)
+            problems.append(f"{sl}: og:image {card} missing on disk")
+            card = None
+        html = _page(d, sl, region, indexable, card)
         _check(html, sl, problems)
         dst = out_dir / sl
         dst.mkdir(parents=True, exist_ok=True)
