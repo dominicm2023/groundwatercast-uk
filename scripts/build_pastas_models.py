@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.forecast.ensemble.members import gauge_rainfall_for
 from src.forecast.pastas import recharge as R
 from src.forecast.pastas.io import load_pet
 from src.forecast.ensemble.scope import MIN_ROWS, select_scope
@@ -29,6 +30,7 @@ from src.forecast.ensemble.scope import MIN_ROWS, select_scope
 ROOT = Path(__file__).resolve().parents[1]
 JOINED = ROOT / "data/features/joined_timeseries.csv"
 CATALOGUE = ROOT / "data/processed/catalogue.csv"
+LINKS = ROOT / "data/processed/station_links.csv"
 
 
 def main() -> int:
@@ -53,8 +55,21 @@ def main() -> int:
     print(f"Scope={scope}: {len(ids)} boreholes  |  rfunc={pcfg['rfunc']} "
           f"recharge={pcfg['recharge']}")
 
+    # Calibrate on the SAME rainfall the fan is driven with — the raw
+    # top-3-gauge series (src.forecast.ensemble.members.observed_daily_rainfall,
+    # reaches ~today), not the joined CSV's GW-date-limited Rainfall column
+    # (indexed on groundwater-observation dates, so every gap — including the
+    # weeks-stale archive tail — was zero-filled by recharge._daily and driven
+    # a fitted recharge gain against a fabricated drought). Falls back to the
+    # joined column only when a station has no rain-gauge link, so it stays
+    # calibratable rather than silently dropping out.
+    raw_root = cfg["download"]["raw_root"]
+    links = (pd.read_csv(LINKS).drop_duplicates("GWStationID")
+             .set_index("GWStationID") if LINKS.exists() else None)
+
     recs: dict[str, dict] = {}
     skipped = []
+    n_gauge = n_joined = 0
     for sid in ids:
         g = joined[joined["station_id"] == sid].sort_index()
         head = g["GW_Level"].dropna()
@@ -63,15 +78,24 @@ def main() -> int:
         evap = load_pet(sid)
         if evap is None:
             skipped.append((sid, "no PET cache")); continue
-        prec = g["Rainfall"]
+        prec = gauge_rainfall_for(sid, links, raw_root)
+        precip_source = "gauge" if not prec.empty else "joined"
+        if prec.empty:
+            prec = g["Rainfall"]
+        n_gauge += precip_source == "gauge"
+        n_joined += precip_source == "joined"
         try:
             rec = R.calibrate(sid, head, prec, evap,
-                              rfunc=pcfg["rfunc"], recharge=pcfg["recharge"])
+                              rfunc=pcfg["rfunc"], recharge=pcfg["recharge"],
+                              precip_source=precip_source)
         except Exception as exc:
             skipped.append((sid, f"calibration error: {exc}")); continue
         recs[sid] = rec
         print(f"  {sid[:8]}  n={rec['n_obs']:5d}  EVP={rec['evp']:5.1f}%  "
-              f"sigma={rec['sigma']:.3f}m  alpha={rec['alpha']:.0f}d")
+              f"sigma={rec['sigma']:.3f}m  alpha={rec['alpha']:.0f}d  "
+              f"precip={precip_source}")
+    print(f"\nPrecip source: {n_gauge} gauge, {n_joined} joined-fallback "
+          f"(no gauge link or no gauge data)")
 
     out = R.save_models(recs, ROOT / pcfg["models_cache"])
     print(f"\nCalibrated {len(recs)} models -> {out.relative_to(ROOT)}")

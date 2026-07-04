@@ -26,15 +26,47 @@ from src.forecast.ensemble.seeding import freshest_gw
 _MEMBER_COLS = ["member", "date", "precip_mm", "recharge_weibull", "gw_pred"]
 
 
+def gauge_rainfall_for(sid: str, links: pd.DataFrame | None,
+                       raw_root: str) -> pd.Series:
+    """Top-3-gauge daily rainfall for ONE borehole via its station_links row —
+    the raw v19-extended series that reaches ~today. THE observed-rain source
+    for Pastas calibration, the fan drivers AND the seasonal bridge (they must
+    all use the same forcing, or the model is fitted on one rainfall reality
+    and simulated over another). Empty series when the station has no link row
+    or no gauge data — callers fall back to the joined column and record it.
+
+    links : station_links.csv deduped + indexed on GWStationID (or None).
+    """
+    if links is None or sid not in links.index:
+        return pd.Series(dtype="float64")
+    rain_ids = [links.loc[sid].get(f"RainMeasureID_{i}") for i in (1, 2, 3)]
+    return observed_daily_rainfall(rain_ids, raw_root)
+
+
+# Long-run mean daily rainfall above this is not rain (England's wettest gauges
+# run ~9.7 mm/day long-term): a broken/cumulative EA measure slips through the
+# catalogue occasionally (seen live: a "gauge" averaging 128 mm/day) and, once
+# averaged in, poisons the recharge forcing ~5x for every consumer.
+_MAX_PLAUSIBLE_MEAN_MM_DAY = 12.0
+
+
 def observed_daily_rainfall(rain_ids: list[str], raw_root: str) -> pd.Series:
-    """Top-3-gauge averaged observed daily Rainfall (tz-naive), from raw files."""
+    """Top-3-gauge averaged observed daily Rainfall (tz-naive), from raw files.
+    Gauges with an implausible long-run mean are excluded (broken series)."""
     series = []
     for mid in rain_ids:
         if mid is None or (isinstance(mid, float) and pd.isna(mid)):
             series.append(None)
             continue
         raw = load_timeseries(str(mid), "rainfall", str(raw_root))
-        series.append(resample_to_daily(raw, agg="sum") if raw is not None else None)
+        daily = resample_to_daily(raw, agg="sum") if raw is not None else None
+        if daily is not None and len(daily):
+            m = float(daily["value"].mean())
+            if m > _MAX_PLAUSIBLE_MEAN_MM_DAY:
+                print(f"  ! rainfall gauge {str(mid)[:8]}…: implausible long-run "
+                      f"mean {m:.1f} mm/day — excluded (broken/cumulative series)")
+                daily = None
+        series.append(daily)
     avg = average_rainfall(series)
     if avg is None or avg.empty:
         return pd.Series(dtype="float64")

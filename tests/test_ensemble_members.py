@@ -268,3 +268,36 @@ class TestMemberTrajectories:
                                    f_bh=2.0, observed_rain=observed)
         # member 0 precip was 1.0 -> *2.0 = 2.0
         assert traj[traj.member == 0]["precip_mm"].iloc[0] == pytest.approx(2.0)
+
+
+# ---------------------------------------------------------------------------
+# observed_daily_rainfall — broken-gauge screen
+# ---------------------------------------------------------------------------
+
+def test_observed_daily_rainfall_excludes_implausible_gauge(tmp_path):
+    """A broken/cumulative 'rainfall' measure (long-run mean far above any real
+    UK gauge — seen live at 128 mm/day) must be excluded from the top-3 average,
+    not poison the recharge forcing for every downstream consumer."""
+    import pandas as pd
+    from src.forecast.ensemble.members import observed_daily_rainfall
+
+    raw = tmp_path / "rainfall"
+    raw.mkdir(parents=True)
+    dates = pd.date_range("2024-01-01", periods=200, freq="D", tz="UTC")
+
+    def write(mid, values):
+        pd.DataFrame({"dateTime": dates, "value": values}).to_csv(
+            raw / f"{mid}.csv", index=False)
+
+    write("good-1", [2.0] * 200)          # plausible gauge
+    write("good-2", [3.0] * 200)          # plausible gauge
+    write("broken", [130.0] * 200)        # cumulative/garbage series
+
+    s = observed_daily_rainfall(["good-1", "good-2", "broken"], str(tmp_path))
+    assert len(s) == 200
+    # average of the two GOOD gauges only — the broken one is screened out
+    assert abs(float(s.mean()) - 2.5) < 1e-9
+
+    # all-broken -> empty series (callers fall back to the joined column)
+    s2 = observed_daily_rainfall(["broken"], str(tmp_path))
+    assert s2.empty

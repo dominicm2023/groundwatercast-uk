@@ -106,31 +106,64 @@ def _noise_qa(ml, resid: pd.Series, head_norm: pd.Series) -> dict:
 
 def calibrate(station_id: str, head: pd.Series, prec: pd.Series, evap: pd.Series,
               *, train_max: pd.Timestamp | None = None,
-              rfunc: str = "Gamma", recharge: str = "FlexModel") -> ModelRec:
+              rfunc: str = "Gamma", recharge: str = "FlexModel",
+              precip_source: str = "joined") -> ModelRec:
     """Calibrate a Pastas TFN on [start, train_max] and return a ModelRec.
 
     train_max=None calibrates on all available head (the production default — use
     every observation). Pass a cutoff only for leakage-safe evaluation.
+
+    precip_source : provenance only (not used in the fit) — "gauge" when `prec`
+    is the raw top-3-gauge series (src.forecast.ensemble.members.observed_daily_
+    rainfall, the same forcing the fan is DRIVEN with) or "joined" when it's the
+    GW-date-limited joined_timeseries.csv column (the historical default, whose
+    gaps recharge._daily zero-fills — a fit/drive mismatch for any station still
+    on this fallback). Recorded so a stale "joined" model is easy to spot after
+    a recalibration pass.
     """
-    ml = _build_model(head, prec, evap, rfunc, recharge)
-    ml.solve(tmax=train_max, report=False)
+    def _solve(bound_noise: bool):
+        m = _build_model(head, prec, evap, rfunc, recharge)
+        if bound_noise:
+            try:
+                m.set_parameter("noise_alpha", pmax=_ALPHA_MAX_DAYS)
+            except Exception:
+                pass                      # no noise model — nothing to bound
+        m.solve(tmax=train_max, report=False)
+        try:
+            e = float(m.stats.evp())
+        except Exception:
+            e = float("nan")
+        return m, e
+
+    ml, evp = _solve(bound_noise=False)
+
+    def _fit_alpha(m):
+        for name in m.parameters.index:
+            if "alpha" in name.lower():
+                return float(m.parameters.loc[name, "optimal"])
+        return None
+
+    # Degenerate-fit rescue: on a marginal borehole the optimizer can park
+    # noise_alpha at its huge default upper bound (~5000 d), laundering the
+    # whole signal into a pseudo-random-walk noise term — EVP collapses to ~0
+    # while the "fit" looks converged. That noise memory is fiction anyway:
+    # simulate_path caps alpha at _ALPHA_MAX_DAYS (365 d), so re-solve with the
+    # SAME bound at fit time and keep whichever fit explains more variance.
+    # (Seen live: EVP 0.0 -> 59.0 on a real borehole.)
+    a0 = _fit_alpha(ml)
+    if (not np.isfinite(evp) or evp < 5.0
+            or (a0 is not None and np.isfinite(a0) and a0 > 10 * _ALPHA_MAX_DAYS)):
+        ml2, evp2 = _solve(bound_noise=True)
+        if np.isfinite(evp2) and (not np.isfinite(evp) or evp2 > evp):
+            ml, evp = ml2, evp2
 
     resid = ml.residuals()
     sigma = float(resid.std())
-    alpha = None
-    for name in ml.parameters.index:
-        if "alpha" in name.lower():
-            alpha = float(ml.parameters.loc[name, "optimal"])
-            break
+    alpha = _fit_alpha(ml)
     if not alpha or not np.isfinite(alpha) or alpha <= 0:
         phi = float(pd.Series(resid).autocorr(lag=1))
         phi = min(max(phi, 1e-3), 0.999)
         alpha = -1.0 / np.log(phi)
-
-    try:
-        evp = float(ml.stats.evp())
-    except Exception:
-        evp = float("nan")
 
     return {
         "station_id": station_id,
@@ -146,6 +179,7 @@ def calibrate(station_id: str, head: pd.Series, prec: pd.Series, evap: pd.Series
         "train_max": (None if train_max is None
                       else pd.Timestamp(train_max).date().isoformat()),
         "fitted_on": date.today().isoformat(),
+        "precip_source": precip_source,
     }
 
 

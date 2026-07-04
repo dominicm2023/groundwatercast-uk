@@ -32,6 +32,7 @@ import numpy as np
 import pandas as pd
 
 from src.data.era5_precip import load_station_precip
+from src.forecast.ensemble.members import gauge_rainfall_for
 from src.forecast.pastas import recharge as R
 from src.forecast.pastas import ensemble as E
 from src.forecast.pastas.io import load_pet
@@ -41,6 +42,7 @@ ROOT = Path(__file__).resolve().parents[1]
 JOINED = ROOT / "data/features/joined_timeseries.csv"
 CATALOGUE = ROOT / "data/processed/catalogue.csv"
 BIAS = ROOT / "data/model/ensemble_bias_factors.csv"
+LINKS = ROOT / "data/processed/station_links.csv"
 
 SUMMARY_COLS = ["station_id", "run", "origin_date", "month_ahead", "month_start",
                 "p_below", "p_near", "p_above", "gw_p10", "gw_p50", "gw_p90",
@@ -153,6 +155,14 @@ def main() -> int:
     norm_ix = norm_df.set_index(["station_id", "month"])
 
     run = pd.Timestamp.now(tz="UTC").normalize().tz_localize(None)
+    # Observed rainfall for the bridge + the f_bh fit: the SAME raw top-3-gauge
+    # series the models are calibrated on and the fan is driven with
+    # (gauge_rainfall_for). The joined CSV's Rainfall is GW-date-limited — its
+    # holes are zero-filled inside simulate_path, so simulating a gauge-
+    # calibrated model over it would re-create the fit/drive mismatch.
+    raw_root = cfg.get("download", {}).get("raw_root", "data/raw")
+    links = (pd.read_csv(LINKS).drop_duplicates("GWStationID")
+             .set_index("GWStationID") if LINKS.exists() else None)
     # Sorted for determinism — keeps --stations N probes aligned with
     # refresh_seasonal_inputs' (also sorted) cap.
     sids = sorted(s for s in models if s in cat.index)
@@ -194,13 +204,19 @@ def main() -> int:
         f_dates = pd.date_range(origin + pd.Timedelta(days=1),
                                 periods=esp.TRACE_DAYS, freq="D")
 
+        # The gauge series (falls back to the joined column for unlinked
+        # stations — same rule as calibration, so fit and simulation always
+        # see the same forcing).
+        rain_hist = gauge_rainfall_for(sid, links, raw_root)
+        if rain_hist.empty:
+            rain_hist = g["Rainfall"]
         # Fit f_bh inline against this borehole's cached CDS-ERA5 (era5) so the
         # traces sit on the calibrated gauge scale; fall back to the persisted
         # ensemble factor if the gauge/ERA5 overlap is too thin.
-        f_bh = _fit_fbh(g["Rainfall"], era5)
+        f_bh = _fit_fbh(rain_hist, era5)
         if f_bh is None:
             f_bh = float(fbh.get(sid, 1.0))
-        obs_rain = R._norm(g["Rainfall"])
+        obs_rain = R._norm(rain_hist)
         obs_pet = R._norm(pet_s)
         # The traces must take over from the day after the last OBSERVED forcing,
         # not from the origin: origin is the fan terminal (~14 days in the

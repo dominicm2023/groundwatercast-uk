@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.forecast.ensemble.members import observed_daily_rainfall
+from src.forecast.ensemble.members import gauge_rainfall_for
 from src.forecast.pastas import recharge as R
 from src.forecast.pastas import ensemble as E
 from src.forecast.pastas.io import load_pet
@@ -91,20 +91,15 @@ def main() -> int:
     links = (pd.read_csv(LINKS).drop_duplicates("GWStationID")
              .set_index("GWStationID") if LINKS.exists() else None)
 
-    def _gauge_rain(sid: str, fallback: pd.Series) -> pd.Series:
-        if links is None or sid not in links.index:
-            return fallback
-        rain_ids = [links.loc[sid].get(f"RainMeasureID_{i}") for i in (1, 2, 3)]
-        obs = observed_daily_rainfall(rain_ids, raw_root)
-        return obs if not obs.empty else fallback
-
     out_frames, skipped = [], []
     for sid, rec in models.items():
         mdf = members[members["station_id"] == sid][["member", "date", "precip_mm"]]
         if mdf.empty:
             skipped.append((sid, "no ensemble members")); continue
         g = joined[joined["station_id"] == sid].sort_index()
-        rain = _gauge_rain(sid, g["Rainfall"])
+        rain = gauge_rainfall_for(sid, links, raw_root)
+        if rain.empty:
+            rain = g["Rainfall"]
         # Seed at the freshest GW (per-station shard incl. live tail), not the
         # staler joined level — shrinks the obs→window gap (Phase-4 refinement).
         head = E.freshest_gw(sid, fallback=g["GW_Level"])

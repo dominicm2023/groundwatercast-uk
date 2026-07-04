@@ -39,9 +39,20 @@ def test_calibrate_returns_serialisable_rec(synthetic):
     assert np.isfinite(rec["sigma"]) and rec["sigma"] >= 0
     assert np.isfinite(rec["alpha"]) and rec["alpha"] > 0
     assert rec["evp"] > 30                      # explains real variance on this signal
+    assert rec["precip_source"] == "joined"     # default when the caller doesn't say
     # round-trips through JSON unchanged
     import json
     assert json.loads(json.dumps(rec)) == rec
+
+
+def test_calibrate_records_precip_source(synthetic):
+    # build_pastas_models passes this explicitly once a station has a gauge
+    # link (src.forecast.ensemble.members.observed_daily_rainfall) — recorded
+    # as provenance so a model still on the joined-CSV fallback is easy to spot.
+    head, prec, evap = synthetic
+    rec = R.calibrate("BH1", head, prec, evap, train_max=pd.Timestamp("2021-12-31"),
+                      precip_source="gauge")
+    assert rec["precip_source"] == "gauge"
 
 
 def test_seeded_forecast_anchors_and_shapes(synthetic):
