@@ -476,6 +476,7 @@ a.brand, a.brand:hover { color: #fff; text-decoration: none; }
   .asof { display: none; }
   .topbar-meta { gap: 8px; }
   .about-link { padding: 4px 8px; font-size: 0.78rem; }
+  .methods-link { display: none; }   /* map topbar is tight — Methods lives in the About modal + shells */
 }
 
 /* data-table drawers: the sortable table scrolls INSIDE its wrapper — it must

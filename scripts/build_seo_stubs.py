@@ -44,6 +44,22 @@ CAVEAT = "Indicative, experimental — not a flood or drought warning. England o
 _REQUIRED_TYPES = {"WebSite", "WebPage", "Dataset", "Place"}
 
 
+
+# THE canonical site nav for every non-map shell page (borehole stubs, /browse,
+# and — kept in sync by hand — the static /about and /methods shells). One
+# builder, one link set: nav drift across shells is how the mobile-overflow
+# bug shipped five separate times.
+def _topnav(current: str | None = None) -> str:
+    links = (("explorer", "/explorer/", "Explorer"), ("browse", "/browse/", "Browse"),
+             ("about", "/about/", "About"), ("methods", "/methods/", "Methods"))
+    nav = " ".join(
+        f'<a href="{href}"{" aria-current=\"page\"" if key == current else ""}>{label}</a>'
+        for key, href, label in links)
+    return ('<header class="bore-top"><a class="bore-brand" href="/">'
+            '<img class="bore-logo" src="/favicon.svg" width="24" height="24" alt=""> '
+            f'GroundwaterCast&nbsp;UK</a><nav>{nav}</nav></header>')
+
+
 def _fmt(v, dp=2):
     try:
         return f"{float(v):.{dp}f}"
@@ -277,9 +293,7 @@ def _page(d, sl, region, indexable, card: str | None = None):
              + (f"{esc(region)} / " if region else "") + esc(name))
     return (
         '<!DOCTYPE html><html lang="en-GB"><head>' + _head(d, sl, region, indexable, card) + "</head><body>"
-        '<header class="bore-top"><a class="bore-brand" href="/"><span class="bore-logo">💧</span> '
-        'GroundwaterCast&nbsp;UK</a><nav><a href="/explorer/">Explorer</a> <a href="/browse/">Browse</a> '
-        '<a href="/about/">About</a></nav></header>'
+        + _topnav() +
         '<div class="bore-wrap">'
         f'<nav class="bore-crumb">{crumb}</nav>'
         '<div class="bore-masthead"><div class="bore-mast-id">'
@@ -354,9 +368,7 @@ def _mini_shell(title, canonical, body):
         '<link rel="icon" type="image/svg+xml" href="/favicon.svg">'
         '<link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/borehole.css">'
         '</head><body>'
-        '<header class="bore-top"><a class="bore-brand" href="/"><span class="bore-logo">💧</span> '
-        'GroundwaterCast&nbsp;UK</a><nav><a href="/explorer/">Explorer</a> <a href="/browse/">Browse</a> '
-        '<a href="/about/">About</a></nav></header>'
+        + _topnav("browse") +
         f'<div class="bore-wrap">{body}</div>'
         '<footer class="bore-foot"><p class="disclaimer"><b>Indicative, uncalibrated research '
         'forecast.</b> Not a flood or drought warning. England-only. Independent open-source '

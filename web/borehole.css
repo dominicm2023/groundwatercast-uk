@@ -15,7 +15,7 @@ body { background: var(--bg); display: block; }
 .bore-brand { color: #fff; font-weight: 700; font-size: 1.04rem; text-decoration: none;
   display: inline-flex; align-items: center; }
 .bore-brand:hover { text-decoration: none; }
-.bore-logo { margin-right: 6px; }
+.bore-logo { margin-right: 7px; display: block; width: 24px; height: 24px; }
 .bore-top nav { display: flex; gap: 2px; }
 .bore-top nav a { color: #dbe7f2; font-size: 0.88rem; padding: 6px 12px; border-radius: 7px; }
 .bore-top nav a:hover { background: rgba(255, 255, 255, 0.12); text-decoration: none; }

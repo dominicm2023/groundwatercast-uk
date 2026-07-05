@@ -190,7 +190,7 @@ a.card:hover {
 @media (max-width: 420px) {
   /* Browse is duplicated by the hero "Browse all boreholes" button right
      below and the footer — drop it before anything overflows */
-  .site-nav a[href="/browse/"] { display: none; }
+  .site-nav a[href="/browse/"], .site-nav a.nav-methods { display: none; }
 }
 
 .stat-pill .stat-spark { display: inline-flex; align-items: center; margin-left: 6px; }
