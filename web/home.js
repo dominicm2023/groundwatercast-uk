@@ -74,7 +74,7 @@
     if (lede) {
       lede.innerHTML = "Today, <b>" + pctBelow + "%</b> of the " + withStatus +
         " boreholes with a current reading are <b>below normal</b> for the time of year — " +
-        "each forecast daily, on open data.";
+        "each with a daily groundwater forecast, on open data.";
     }
   }
 
