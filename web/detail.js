@@ -369,7 +369,7 @@
         `<button class="range-btn${d === range ? " active" : ""}" data-days="${d}">${l}</button>`
       ).join("");
       out.push(`<div class="fan-controls"><span class="range-label">History</span>${btns}</div>`);
-      out.push(`<div class="fan-host">${C.fanChart(detail, { historyDays: initDays, levels: triggerLevels(detail), large: onBoreholePage })}</div>`);
+      out.push(`<div class="fan-host">${C.fanChart(detail, { historyDays: initDays, levels: triggerLevels(detail), large: pageLarge() })}</div>`);
       out.push(`<p class="caption">Observed history (dark) → ${hLabel}-day P10/P50/P90 forecast fan (blue), continuing as a monthly seasonal outlook — each circle coloured by that month's most-likely tercile (matching the map: amber below / grey near / blue above normal) with P10–P90 whiskers. Red dashed = breach threshold. ${onBoreholePage ? "Hover, or drag the timeline below, for values." : "Hover for values."}</p>`);
       // Standalone page: a draggable timeline scrubber with a live value readout
       // (bindFan wires it to the chart's scrub API). Discoverable + touch-friendly.
@@ -805,6 +805,14 @@
   // Post-render: wire the history-range buttons + attach the fan hover.
   // Re-renders just the fan into .fan-host with a new observed-history window
   // (the forecast + seasonal always stay in view).
+  // The page's big chart variant is only legible when it actually gets space:
+  // squeezed to a phone width its 760-unit viewBox renders ~4px fonts. Below
+  // 640px use the compact variant (designed for ~340px panels).
+  function pageLarge() {
+    return location.pathname.indexOf("/b/") === 0
+      && !(window.matchMedia && window.matchMedia("(max-width: 640px)").matches);
+  }
+
   function bindFan(container, detail) {
     const C = window.GWC_CHARTS;
     const host = container.querySelector(".fan-host");
@@ -852,7 +860,7 @@
     }
     function draw(days) {
       activeDays = days;
-      host.innerHTML = C.fanChart(detail, { historyDays: days, levels: triggerLevels(detail), large: onPage });
+      host.innerHTML = C.fanChart(detail, { historyDays: days, levels: triggerLevels(detail), large: pageLarge() });
       const svg = host.querySelector(".svg-fan");
       api = svg ? C.attachFanHover(svg) : null;
       wireScrub();

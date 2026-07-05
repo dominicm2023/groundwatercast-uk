@@ -65,7 +65,9 @@
   function renderStat(counts, total) {
     var withStatus = counts.below + counts.near + counts.above;
     var lede = document.getElementById("national-lede");
-    if (!withStatus) return;
+    // a tiny sample makes the headline silly ("43% of the 7 boreholes") —
+    // keep the static lede until the denominator is meaningful
+    if (withStatus < 30) return;
     var pctBelow = Math.round((counts.below / withStatus) * 100);
     var stat = document.getElementById("national-stat");
     document.getElementById("stat-num").textContent = pctBelow + "%";

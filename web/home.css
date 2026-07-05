@@ -15,6 +15,8 @@
   --panel: #ffffff;
 }
 * { box-sizing: border-box; }
+/* author display rules (e.g. .stat-pill inline-flex) must never beat [hidden] */
+[hidden] { display: none !important; }
 html { scroll-behavior: smooth; }
 body {
   margin: 0;
@@ -168,6 +170,27 @@ a.card:hover {
   .hero-map { aspect-ratio: 5 / 4; max-height: 360px; }
   .cards.three { grid-template-columns: 1fr; }
   .site-brand .tagline { display: none; }
+}
+
+@media (max-width: 560px) {
+  /* topbar fits 375px: tighter everything, compact CTA ("Explore →") */
+  .site-top { padding: 10px 10px; gap: 8px; }
+  .site-brand { gap: 7px; }
+  .site-brand .logo { width: 26px; height: 26px; }
+  .site-brand h1 { font-size: 0.92rem; }
+  .site-nav { gap: 0; }
+  .site-nav a { padding: 6px 6px; font-size: 0.82rem; }
+  .site-nav a.primary { white-space: nowrap; padding: 6px 10px; }
+  .cta-long { display: none; }
+  /* the map-card caption collides with the (required) OSM attribution at this
+     width — the attribution wins, the caption is a nicety */
+  .hero-map .maplab { display: none; }
+}
+
+@media (max-width: 420px) {
+  /* Browse is duplicated by the hero "Browse all boreholes" button right
+     below and the footer — drop it before anything overflows */
+  .site-nav a[href="/browse/"] { display: none; }
 }
 
 .stat-pill .stat-spark { display: inline-flex; align-items: center; margin-left: 6px; }

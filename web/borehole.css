@@ -94,9 +94,11 @@ body { background: var(--bg); display: block; }
   color: var(--muted); font-weight: 700; flex: 0 0 auto;
 }
 .fan-scrub {
-  flex: 1 1 auto; appearance: none; -webkit-appearance: none; height: 5px;
-  border-radius: 999px; background: linear-gradient(90deg, #cfe0ef, var(--above));
-  outline: none; cursor: pointer;
+  flex: 1 1 auto; appearance: none; -webkit-appearance: none; height: 24px;
+  border-radius: 999px; outline: none; cursor: pointer;
+  /* 5px visual track centred inside a 24px touch target (a 5px-tall input is
+     un-draggable on touch screens) */
+  background: linear-gradient(90deg, #cfe0ef, var(--above)) center / 100% 5px no-repeat;
 }
 .fan-scrub::-webkit-slider-thumb {
   -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
@@ -139,5 +141,10 @@ body { background: var(--bg); display: block; }
 @media (max-width: 560px) {
   .bore-h1 { font-size: 1.55rem; }
   .bore-mast-status { text-align: left; }
-  .bore-top nav a { padding: 6px 8px; font-size: 0.82rem; }
+  /* the topbar must never overflow the viewport (it dragged the whole page
+     into horizontal scroll): let it wrap, shrink the brand, tighten links */
+  .bore-top { flex-wrap: wrap; padding: 9px 12px; row-gap: 2px; }
+  .bore-brand { font-size: 0.95rem; }
+  .bore-top nav { flex-wrap: wrap; }
+  .bore-top nav a { padding: 5px 7px; font-size: 0.8rem; }
 }

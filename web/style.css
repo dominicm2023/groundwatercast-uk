@@ -466,3 +466,18 @@ a.brand, a.brand:hover { color: #fff; text-decoration: none; }
 /* national one-liner in the explorer topbar */
 .national-note { color: #ffd77a; }
 @media (max-width: 900px) { .national-note { display: none; } }
+
+/* mobile topbar: the meta row (as-of text + Browse/About) must never push the
+   bar past the viewport — hide the long as-of line, tighten the links */
+@media (max-width: 640px) {
+  #topbar { padding: 0 10px; }
+  #topbar h1 { font-size: 0.95rem; }
+  #topbar .tagline { display: none; }
+  .asof { display: none; }
+  .topbar-meta { gap: 8px; }
+  .about-link { padding: 4px 8px; font-size: 0.78rem; }
+}
+
+/* data-table drawers: the sortable table scrolls INSIDE its wrapper — it must
+   never widen the page (26px horizontal scroll on mobile borehole pages) */
+.dd-tablewrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
