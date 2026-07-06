@@ -172,10 +172,13 @@
           `<p class="caption ld-bad">This browser blocked local storage — your ladders ` +
           `last only for this session.</p>`) +
         `<div class="ld-share">` +
-          `<button type="button" class="ld-share-btn" data-ld-act="copy-share">Copy ladder code</button>` +
-          `<button type="button" class="ld-share-btn" data-ld-act="paste-share">Paste ladder code</button>` +
+          `<button type="button" class="ld-share-btn" data-ld-act="copy-link">Copy share link</button>` +
+          `<button type="button" class="ld-share-btn" data-ld-act="copy-share">Copy code</button>` +
+          `<button type="button" class="ld-share-btn" data-ld-act="paste-share">Paste code</button>` +
           `<span class="ld-share-status caption" role="status" aria-live="polite"></span>` +
         `</div>` +
+        `<p class="caption ld-share-note">A share link keeps your levels in the URL only — ` +
+          `they never reach our server. Anyone opening it is asked before it merges.</p>` +
       `</div>` +
     `</div>`;
   }
@@ -376,6 +379,11 @@
         if (ed) ed.innerHTML = editorHTML(id, detail);
         const ro = readoutEl();
         if (ro) ro.innerHTML = readoutHTML(id, detail);
+      } else if (act === "copy-link") {
+        const status = root.querySelector(".ld-share-status");
+        const link = shareLink();
+        if (!link) { if (status) status.textContent = "Nothing to share."; return; }
+        copyToClipboard(link, status);
       } else if (act === "copy-share") {
         const status = root.querySelector(".ld-share-status");
         const code = exportString();
@@ -420,14 +428,23 @@
     if (!arr.length) return "";
     return btoa(unescape(encodeURIComponent(JSON.stringify(arr))));
   }
-  function importString(s) {
+  // Decode a share code to a validated entry array WITHOUT touching the store —
+  // so the caller can PREVIEW it (count boreholes/levels) and confirm before
+  // merging. Throws on garbage.
+  function decodeLadders(s) {
     if (!s) throw new Error("empty");
     const json = decodeURIComponent(escape(atob(s)));
     const arr = JSON.parse(json);
     if (!Array.isArray(arr)) throw new Error("not an array");
     const clean = arr.filter(isValidEntry);
     if (!clean.length) throw new Error("no valid entries");
-    // merge-by-id: imported entries replace same-id, others kept
+    return clean;
+  }
+
+  // Merge validated entries into the store (by borehole id: an incoming set
+  // REPLACES the same borehole's ladder, others are kept — additive, never a
+  // blanket wipe) and re-sync the open panel / fan / watchlist.
+  function mergeLadders(clean) {
     const byId = new Map();
     for (const e of load()) byId.set(e.id, e);
     for (const e of clean) {
@@ -443,6 +460,19 @@
       window.GWC_DETAIL.refreshFanLevels();
     if (window.GWC_WATCH && window.GWC_WATCH.renderPanel)
       window.GWC_WATCH.renderPanel();
+  }
+
+  function importString(s) { mergeLadders(decodeLadders(s)); }
+
+  // A shareable LINK (Tier-0 persistence / team sharing): the export code lives
+  // in the URL FRAGMENT, which browsers never send to the server — so the
+  // trigger levels stay entirely client-side even inside the link. Built for
+  // the current page; opening it elsewhere triggers the confirm-to-merge below.
+  function shareLink() {
+    const code = exportString();
+    if (!code) return "";
+    const base = location.origin + location.pathname;
+    return base + "#ladder=" + code;
   }
 
   // ---- clipboard (mirrors watchlist.js / detail.js copyText) -----------------
@@ -462,6 +492,62 @@
     } else { fallback(); }
   }
 
+  // ---- shared-link import (Tier-0 persistence): #ladder=<code> in the URL -----
+  // Consumed on load. NEVER silently merges — shows a one-line confirm bar with
+  // a preview count, so a link can't overwrite someone's ladders behind their
+  // back. The param is stripped from the URL afterwards either way (so a refresh
+  // or in-app navigation doesn't re-prompt; the original bookmarked link is
+  // untouched and still works on a fresh visit).
+  function _stripLadderHash() {
+    try {
+      const q = new URLSearchParams(location.hash.replace(/^#/, ""));
+      if (!q.has("ladder")) return;
+      q.delete("ladder");
+      const rest = q.toString();
+      history.replaceState(null, "", location.pathname + location.search +
+        (rest ? "#" + rest : ""));
+    } catch (e) { /* ignore */ }
+  }
+
+  function _importBar(clean, onYes) {
+    const nB = clean.length;
+    const nR = clean.reduce((a, e) => a + (e.rungs ? e.rungs.length : 0), 0);
+    const bar = document.createElement("div");
+    bar.className = "ld-import-bar";
+    bar.setAttribute("role", "dialog");
+    bar.setAttribute("aria-label", "Import shared trigger levels");
+    bar.innerHTML =
+      '<span class="ld-import-msg">This link adds <b>' + nR + '</b> trigger ' +
+      'level' + (nR === 1 ? "" : "s") + ' across <b>' + nB + '</b> borehole' +
+      (nB === 1 ? "" : "s") + ' to your saved ladders (merging with any you ' +
+      'already have — your other ladders are kept). Levels stay in your browser only.</span>' +
+      '<span class="ld-import-btns">' +
+      '<button type="button" class="ld-import-yes">Import</button>' +
+      '<button type="button" class="ld-import-no">Not now</button></span>';
+    document.body.appendChild(bar);
+    const close = () => { bar.remove(); _stripLadderHash(); };
+    bar.querySelector(".ld-import-yes").addEventListener("click", () => { onYes(); close(); });
+    bar.querySelector(".ld-import-no").addEventListener("click", close);
+  }
+
+  function _consumeHashLadder() {
+    let code = null;
+    try {
+      code = new URLSearchParams(location.hash.replace(/^#/, "")).get("ladder");
+    } catch (e) { return; }
+    if (!code) return;
+    let clean;
+    try { clean = decodeLadders(code); }
+    catch (e) { _stripLadderHash(); return; }   // garbage link → quietly drop
+    _importBar(clean, () => mergeLadders(clean));
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", _consumeHashLadder);
+  } else {
+    _consumeHashLadder();
+  }
+
   // ---- public API ------------------------------------------------------------
   window.GWC_LADDER = {
     load: load, save: save,
@@ -469,5 +555,6 @@
     addRung: addRung, updateRung: updateRung, removeRung: removeRung,
     ladderHTML: ladderHTML, bindDetail: bindDetail,
     exportString: exportString, importString: importString,
+    decodeLadders: decodeLadders, shareLink: shareLink,
   };
 })();
