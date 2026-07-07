@@ -240,6 +240,10 @@ a.brand, a.brand:hover { color: #fff; text-decoration: none; }
 .stale-note { font-size: 0.78rem; color: #8a6d00; background: #fff8e1;
   border: 1px solid #f0e0a8; border-radius: 6px; padding: 7px 10px; margin: 0 0 8px;
   line-height: 1.4; }
+.short-rec-note { font-size: 0.78rem; color: #4a5a6a; background: #eef3f8;
+  border: 1px solid #d3e0ec; border-radius: 6px; padding: 7px 10px; margin: 0 0 8px;
+  line-height: 1.4; }
+.short-rec-note b { color: var(--ink); }
 .coverage-note { font-size: 0.78rem; color: var(--muted); background: var(--bg);
   border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; margin: 0 0 8px;
   line-height: 1.4; }

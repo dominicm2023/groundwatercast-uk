@@ -358,6 +358,16 @@
         : (hLabel ? `${hLabel}-day forecast` : "Forecast");
       out.push(`<div class="d-section${onBoreholePage ? " d-lead" : ""}"><h3>${fcTitle}</h3>`);
       if (fc.headline) out.push(`<p class="headline">${esc(fc.headline)}</p>`);
+      // Short-record fan tier: a younger borehole (under ~5½ years of record)
+      // that passed a leakage-safe backtest gate. The 14-day fan is real but
+      // provisional — wider bands, and no seasonal outlook (it fails the long
+      // horizon). Badge it so it's never mistaken for a mature-record forecast.
+      if (fc.short_record) {
+        out.push(`<p class="short-rec-note">⏳ <b>Short record — provisional.</b> ` +
+          `This borehole has a shorter observation history than most, so its ` +
+          `14-day forecast passed a backtest but carries wider uncertainty, ` +
+          `and no seasonal outlook is shown. It sharpens as the record grows.</p>`);
+      }
       // stale-seed note: when the last reading is weeks old, the nowcast
       // estimates the level to today from observed rainfall (the dashed segment).
       if (fc.stale_days != null && fc.stale_days > 14) {
