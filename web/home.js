@@ -47,22 +47,38 @@
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
     map.on("load", function () {
       map.addSource("bores", { type: "geojson", data: gj });
+      // Mirror the explorer's default "active" view: show only boreholes with a
+      // forecast OR a fresh status (drops the ~565 pure-stale grey dots that
+      // otherwise wash the snapshot out), and mark forecast boreholes with the
+      // same navy ring the interactive map uses.
+      var activeFilter = ["any",
+        ["==", ["get", "has_forecast"], true],
+        ["!=", ["coalesce", ["get", "status"], "none"], "none"]];
       map.addLayer({
-        id: "bore-dots", type: "circle", source: "bores",
+        id: "bore-ring", type: "circle", source: "bores",
+        filter: ["==", ["get", "has_forecast"], true],
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 4.2, 7, 9],
+          "circle-color": "rgba(0,0,0,0)",
+          "circle-stroke-color": "#1a3a5c", "circle-stroke-width": 1.3,
+          "circle-stroke-opacity": 0.7,
+        },
+      });
+      map.addLayer({
+        id: "bore-dots", type: "circle", source: "bores", filter: activeFilter,
         paint: {
           "circle-color": ["match", ["get", "status"],
             "below", PAL.below, "near", PAL.near, "above", PAL.above, PAL.none],
-          "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 2.2, 7, 5.5],
-          "circle-stroke-width": 0.4, "circle-stroke-color": "#ffffff",
-          "circle-opacity": ["match", ["get", "status"],
-            "below", 0.95, "near", 0.95, "above", 0.95, 0.45],
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 2.4, 7, 6],
+          "circle-stroke-width": 0.5, "circle-stroke-color": "#ffffff",
+          "circle-opacity": 0.95,
         },
       });
       map.fitBounds([[-6.3, 49.9], [1.8, 55.9]], { padding: 14, duration: 0 });
     });
   }
 
-  function renderStat(counts, total) {
+  function renderStat(counts, nForecast) {
     var withStatus = counts.below + counts.near + counts.above;
     var lede = document.getElementById("national-lede");
     // a tiny sample makes the headline silly ("43% of the 7 boreholes") —
@@ -71,12 +87,16 @@
     var pctBelow = Math.round((counts.below / withStatus) * 100);
     var stat = document.getElementById("national-stat");
     document.getElementById("stat-num").textContent = pctBelow + "%";
-    // pick the colour/word for whichever share we lead with (below)
     stat.hidden = false;
     if (lede) {
-      lede.innerHTML = "Today, <b>" + pctBelow + "%</b> of the " + withStatus +
-        " boreholes with a current reading are <b>below normal</b> for the time of year — " +
-        "each with a daily groundwater forecast, on open data.";
+      // Lead with reach (the forecast count), then the live signal. The old copy
+      // led with `withStatus` (~288) — the smallest of our three numbers — which
+      // read as the tool's scope rather than "boreholes with a fresh reading today".
+      lede.innerHTML = "Daily probabilistic forecasts for <b>" +
+        nForecast.toLocaleString() + "</b> boreholes across England, refreshed every " +
+        "morning on open data. Of the " + withStatus.toLocaleString() +
+        " with a reading fresh enough to place today, <b>" + pctBelow +
+        "%</b> sit <b>below normal</b> for the season.";
     }
   }
 
@@ -167,18 +187,20 @@
     .then(function (gj) {
       var feats = (gj && gj.features) || [];
       var counts = { below: 0, near: 0, above: 0 };
+      var nForecast = 0;
       for (var i = 0; i < feats.length; i++) {
-        var s = feats[i].properties && feats[i].properties.status;
-        if (s && counts[s] != null) counts[s]++;
+        var p = feats[i].properties || {};
+        if (p.status && counts[p.status] != null) counts[p.status]++;
+        if (p.has_forecast) nForecast++;
       }
-      renderStat(counts, feats.length);
+      renderStat(counts, nForecast);
       initMap(gj);
       renderNotable(feats);
       renderTrend();
       var lab = document.getElementById("hero-map-lab");
       if (lab) {
-        var ws = counts.below + counts.near + counts.above;
-        lab.textContent = ws + " boreholes with a current reading · click to open the interactive map.";
+        lab.textContent = nForecast.toLocaleString() +
+          " boreholes with a daily forecast · click to open the interactive map.";
       }
     })
     .catch(function () {
