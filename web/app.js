@@ -535,8 +535,12 @@
         if (!withStatus) return;
         const el = document.getElementById("national-note");
         if (el) {
-          el.textContent = `${Math.round((t.below / withStatus) * 100)}% of ` +
-            `boreholes with a current reading are below normal`;
+          // Compact pill — the long sentence wrapped into the tagline at mid
+          // widths and jumbled the header. Full honest phrasing in the tooltip.
+          const pct = Math.round((t.below / withStatus) * 100);
+          el.innerHTML = `<span class="dot"></span>${pct}% below normal today`;
+          el.title = `${pct}% of the ${withStatus} boreholes with a current ` +
+            `reading are below normal for the time of year`;
           el.hidden = false;
         }
       })

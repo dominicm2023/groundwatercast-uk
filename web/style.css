@@ -44,8 +44,12 @@ body {
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 a.brand, a.brand:hover { color: #fff; text-decoration: none; }
 .brand .logo { width: 30px; height: 30px; flex: 0 0 auto; display: block; }
-#topbar h1 { font-size: 1.05rem; margin: 0; font-weight: 700; }
-#topbar .tagline { margin: 0; font-size: 0.74rem; color: #c7d6e6; }
+.brand > div { min-width: 0; }
+#topbar h1 { font-size: 1.05rem; margin: 0; font-weight: 700; white-space: nowrap; }
+/* One line, ellipsised under pressure — a wrapping tagline used to interleave
+   with the national-note in the meta group and jumble the whole header. */
+#topbar .tagline { margin: 0; font-size: 0.74rem; color: #c7d6e6;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .topbar-meta { display: flex; align-items: center; gap: 14px; flex: 0 0 auto; }
 .asof { font-size: 0.76rem; color: #c7d6e6; white-space: nowrap; }
 .about-link { color: #fff; font-size: 0.82rem; text-decoration: none;
@@ -472,7 +476,14 @@ a.brand, a.brand:hover { color: #fff; text-decoration: none; }
 .xchk-diverge { background: #fdebcf; color: #a35a00; }
 
 /* national one-liner in the explorer topbar */
-.national-note { color: #ffd77a; }
+.national-note {
+  display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+  color: #ffd77a; font-size: 0.78rem;
+  border: 1px solid rgba(255, 215, 122, 0.45); border-radius: 999px;
+  padding: 4px 11px; flex: 0 0 auto;
+}
+.national-note .dot { width: 9px; height: 9px; border-radius: 50%;
+  background: var(--below); flex: 0 0 auto; }
 @media (max-width: 900px) { .national-note { display: none; } }
 
 /* mobile topbar: the meta row (as-of text + Browse/About) must never push the
