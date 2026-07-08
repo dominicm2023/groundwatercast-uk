@@ -370,10 +370,20 @@
       }
       // stale-seed note: when the last reading is weeks old, the nowcast
       // estimates the level to today from observed rainfall (the dashed segment).
-      if (fc.stale_days != null && fc.stale_days > 14) {
-        out.push(`<p class="stale-note">⚠ Last real reading <b>${fc.stale_days} days ago</b> — ` +
-          `the dashed segment estimates the level to today from recent rainfall, ` +
-          `then the ${hLabel}-day forecast continues.</p>`);
+      // Age comes from the OBSERVED series (the truth on this page), not the
+      // forecast's stale_days — the series can be fresher than the seed when
+      // the archive tail lands after the morning run (the Via Gellia skew).
+      let obsAge = fc.stale_days;
+      const obsSer = (detail.observed && detail.observed.series) || [];
+      if (obsSer.length) {
+        const lastT = new Date(obsSer[obsSer.length - 1][0] + "T00:00:00Z").getTime();
+        const age = Math.max(0, Math.round((Date.now() - lastT) / 86400000));
+        if (fc.stale_days == null || age < fc.stale_days) obsAge = age;
+      }
+      if (obsAge != null && obsAge > 14) {
+        out.push(`<p class="stale-note">⚠ Last real reading <b>${obsAge} days ago</b> — ` +
+          `the dashed segment estimates the level from there to today using recent ` +
+          `rainfall, then the ${hLabel}-day forecast continues.</p>`);
       }
       const btns = [["365", "1y"], ["730", "2y"], ["all", "All"]].map(([d, l]) =>
         `<button class="range-btn${d === range ? " active" : ""}" data-days="${d}">${l}</button>`

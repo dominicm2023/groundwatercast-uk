@@ -44,11 +44,20 @@
     const iw = W - m.l - m.r, ih = H - m.t - m.b;
 
     const fanAll = (detail.forecast && detail.forecast.fan) || [];
-    const nowcast = fanAll.filter((f) => f.segment === "nowcast");
+    // Observations are the truth: the modelled nowcast exists only to BRIDGE
+    // dates with no reading, so clip it to strictly after the last observed
+    // date. Otherwise, whenever the observed series is fresher than the
+    // forecast's seed (archive tail landing after the morning run, hourly live
+    // appends, a stale-seeded fleet run), the dashed "estimated" segment draws
+    // over weeks of real data and contradicts it (seen live on Via Gellia:
+    // origin 19 May, observations to 19 Jun — 31 days over-drawn).
+    const obsFull = (detail.observed && detail.observed.series) || [];
+    const lastObsT = obsFull.length ? dnum(obsFull[obsFull.length - 1][0]) : -Infinity;
+    const nowcast = fanAll.filter((f) => f.segment === "nowcast" && dnum(f.date) > lastObsT);
     const fan = fanAll.filter((f) => f.segment !== "nowcast");   // forecast segment
-    const fanFirst = fanAll[0] || null;                          // earliest fan point (nowcast start when stale)
+    const fanFirst = (nowcast[0] || fan[0]) || null;             // earliest DRAWN fan point
     const histDays = opts.historyDays || 365;
-    let obs = (detail.observed && detail.observed.series) || [];
+    let obs = obsFull;
     if (obs.length && fanFirst) {
       const cutoff = dnum(fanFirst.date) - histDays * 86400000;
       obs = obs.filter((p) => dnum(p[0]) >= cutoff);
