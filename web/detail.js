@@ -461,6 +461,37 @@
         : fold("Seasonal outlook (6 months) — experimental", inner));
     }
 
+    // -- "How did the last forecast do?" — the newest ARCHIVED forecast whose
+    // window has closed, overlaid with what was then observed. Published as-is,
+    // good or bad — the honesty feature the eventual verification page grows
+    // from. Null until a window closes with enough observations. --
+    const vf = detail.verification;
+    if (vf && C.verifyChart) {
+      const chart = C.verifyChart(detail, { large: pageLarge() });
+      if (chart) {
+        const frac = vf.n_obs ? vf.n_in_band / vf.n_obs : 0;
+        const verdict = frac >= 0.7
+          ? "about as often as an honest 80% band should"
+          : frac >= 0.5
+            ? "a little below the ≈8-in-10 an honest band aims for"
+            : "well below the ≈8-in-10 aim — the band was too narrow over this window";
+        const miss = vf.mae_p50 == null ? "–"
+          : vf.mae_p50 < 1 ? Math.round(vf.mae_p50 * 100) + " cm" : fmt1(vf.mae_p50) + " m";
+        const inner =
+          `<p class="verify-line">Forecast issued <b>${esc(prettyDate(vf.run.slice(0, 10)))}</b>: ` +
+          `<b>${vf.n_in_band} of ${vf.n_obs}</b> observed days landed inside the published ` +
+          `P10–P90 band — ${verdict}. Typical miss on the middle line: <b>${esc(miss)}</b>.</p>` +
+          `<div class="verify-host">${chart}</div>` +
+          `<p class="caption">Band and dashed middle line are exactly what we published on ` +
+          `${esc(prettyDate(vf.run.slice(0, 10)))} — never re-run with today's model. Dark dots ` +
+          `are the observed daily levels; red dots fell outside the band. A new window is ` +
+          `scored automatically as each day's forecast closes.</p>`;
+        out.push(onBoreholePage
+          ? pageCard("How did the last forecast do?", inner)
+          : fold("How did the last forecast do?", inner));
+      }
+    }
+
     // -- set your own trigger levels — the ladder (named mAOD levels). Each level
     // now draws a line on the fan chart above (live as you edit) and is read
     // qualitatively against the fan. Forecast-only; the name-☆ owns watching. --

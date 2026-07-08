@@ -244,6 +244,10 @@ a.brand, a.brand:hover { color: #fff; text-decoration: none; }
   border: 1px solid #d3e0ec; border-radius: 6px; padding: 7px 10px; margin: 0 0 8px;
   line-height: 1.4; }
 .short-rec-note b { color: var(--ink); }
+/* "How did the last forecast do?" — verification overlay */
+.verify-line { font-size: 0.86rem; line-height: 1.5; margin: 0 0 8px; }
+.verify-line b { color: var(--ink); }
+.verify-host svg { width: 100%; height: auto; display: block; }
 .coverage-note { font-size: 0.78rem; color: var(--muted); background: var(--bg);
   border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; margin: 0 0 8px;
   line-height: 1.4; }

@@ -433,5 +433,74 @@
     return rows.join("");
   }
 
-  window.GWC_CHARTS = { fanChart, attachFanHover, ladder, seasonalBars };
+  // ==========================================================================
+  // Verification chart — "how did the last forecast do?". Overlays the ARCHIVED
+  // fan (what we published, verbatim) with what was then observed, over the
+  // closed window plus a little run-up context. Static (no hover): the summary
+  // sentence beside it carries the numbers.
+  // ==========================================================================
+  function verifyChart(detail, opts) {
+    opts = opts || {};
+    const v = detail.verification;
+    if (!v || !v.fan || !v.fan.length) return "";
+    const large = !!opts.large;
+    const W = large ? 760 : 340, H = large ? 240 : 160;
+    const m = large ? { l: 48, r: 14, t: 14, b: 26 } : { l: 38, r: 8, t: 10, b: 20 };
+    const FS = large ? 10.5 : 8.5;
+    const iw = W - m.l - m.r, ih = H - m.t - m.b;
+
+    const fan = v.fan.filter((f) => f.p50 != null);
+    if (!fan.length) return "";
+    const t0 = dnum(fan[0].date), t1 = dnum(fan[fan.length - 1].date);
+    const ctx0 = t0 - 5 * 86400000;                       // 5 days of run-up
+    const obs = ((detail.observed && detail.observed.series) || [])
+      .filter((p) => { const t = dnum(p[0]); return t >= ctx0 && t <= t1; });
+
+    const ys = [];
+    fan.forEach((f) => { ys.push(f.p10, f.p50, f.p90); });
+    obs.forEach((p) => ys.push(p[1]));
+    const [lo, hi] = yRange(ys);
+    const X = (t) => m.l + ((t - ctx0) / (t1 - ctx0)) * iw;
+    const Y = (val) => m.t + (1 - (val - lo) / (hi - lo)) * ih;
+
+    const parts = [];
+    // y gridlines + labels (3 ticks)
+    for (let i = 0; i <= 2; i++) {
+      const val = lo + ((hi - lo) * i) / 2, y = Y(val);
+      parts.push(`<line x1="${m.l}" y1="${y.toFixed(1)}" x2="${W - m.r}" y2="${y.toFixed(1)}" stroke="#eef1f4"/>`);
+      parts.push(`<text x="${m.l - 4}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="${FS}" fill="#8a8f98">${fmt1(val)}</text>`);
+    }
+    // archived band + P50 (the published fan, ghosted)
+    const top = fan.map((f) => `${X(dnum(f.date)).toFixed(1)},${Y(f.p90).toFixed(1)}`);
+    const bot = fan.slice().reverse().map((f) => `${X(dnum(f.date)).toFixed(1)},${Y(f.p10).toFixed(1)}`);
+    parts.push(`<polygon points="${top.concat(bot).join(" ")}" fill="${PAL.above}" fill-opacity="0.14" stroke="none"/>`);
+    const p50 = fan.map((f) => `${X(dnum(f.date)).toFixed(1)},${Y(f.p50).toFixed(1)}`).join(" ");
+    parts.push(`<polyline points="${p50}" fill="none" stroke="${PAL.above}" stroke-width="1.4" stroke-dasharray="4 3" stroke-opacity="0.85"/>`);
+    // origin marker
+    parts.push(`<line x1="${X(t0).toFixed(1)}" y1="${m.t}" x2="${X(t0).toFixed(1)}" y2="${H - m.b}" stroke="#c3c9d1" stroke-width="1" stroke-dasharray="2 3"/>`);
+    parts.push(`<text x="${X(t0).toFixed(1)}" y="${H - m.b + (large ? 16 : 12)}" text-anchor="middle" font-size="${FS}" fill="#8a8f98">issued</text>`);
+    // observed: dark line + dots, in/out of band coloured honestly
+    if (obs.length) {
+      const ol = obs.map((p) => `${X(dnum(p[0])).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" ");
+      parts.push(`<polyline points="${ol}" fill="none" stroke="#2b3138" stroke-width="1.6"/>`);
+      const byDate = {};
+      fan.forEach((f) => { byDate[f.date] = f; });
+      obs.forEach((p) => {
+        const f = byDate[p[0]];
+        if (!f) return;                                    // run-up context dot: skip
+        const inBand = p[1] >= f.p10 && p[1] <= f.p90;
+        parts.push(`<circle cx="${X(dnum(p[0])).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="${large ? 3 : 2.3}" fill="${inBand ? "#2b3138" : "#c0392b"}" stroke="#fff" stroke-width="0.8"/>`);
+      });
+    }
+    // x labels: window start/end
+    const dlab = (t) => new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+    parts.push(`<text x="${m.l}" y="${H - 6}" font-size="${FS}" fill="#8a8f98">${esc(dlab(ctx0))}</text>`);
+    parts.push(`<text x="${W - m.r}" y="${H - 6}" text-anchor="end" font-size="${FS}" fill="#8a8f98">${esc(dlab(t1))}</text>`);
+
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="${SVGNS}" role="img" ` +
+      `aria-label="Archived forecast band with the observations that followed">` +
+      parts.join("") + `</svg>`;
+  }
+
+  window.GWC_CHARTS = { fanChart, attachFanHover, ladder, seasonalBars, verifyChart };
 })();
