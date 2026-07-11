@@ -55,6 +55,7 @@ models/
 outputs/
 web/b/
 web/og/
+!web/og/valley-test.jpg
 web/apple-touch-icon.png
 web/browse/
 web/sitemap.xml

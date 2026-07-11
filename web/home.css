@@ -108,6 +108,23 @@ h1, h2, h3 { color: var(--ink); }
 .hero-map .maplibregl-ctrl-attrib { font-size: 9px; background: rgba(255, 255, 255, 0.7); }
 .hero-map .maplibregl-ctrl-bottom-right { z-index: 6; }
 
+/* ---- 3-D valley teaser (mirrors the hero map's framing) ---- */
+.valley-teaser {
+  display: block; position: relative; border-radius: 16px; overflow: hidden;
+  border: 1px solid #dbe4ec; box-shadow: 0 8px 30px rgba(26, 58, 92, 0.10);
+  margin-top: 16px; background: #0a1220;
+}
+.valley-teaser img { display: block; width: 100%; height: auto;
+  transition: transform 0.5s ease; }
+.valley-teaser:hover img { transform: scale(1.02); }
+@media (prefers-reduced-motion: reduce) { .valley-teaser img,
+  .valley-teaser:hover img { transition: none; transform: none; } }
+.valley-teaser .maplab {
+  position: absolute; left: 14px; bottom: 12px; max-width: 78%;
+  font-size: 0.76rem; color: var(--muted); background: rgba(255, 255, 255, 0.9);
+  border-radius: 7px; padding: 5px 9px; pointer-events: none;
+}
+
 /* ---- section scaffolding ---- */
 .section { padding: 26px 0; }
 .section > .eyebrow {

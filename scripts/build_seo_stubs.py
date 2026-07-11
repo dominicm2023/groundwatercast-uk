@@ -430,7 +430,8 @@ def build(pack_dir: Path = PACK_DIR, out_dir: Path = OUT_DIR, today: str | None 
     # home + top-level pages + directory (all editorial, always fresh-dated)
     urls = [(f"{SITE}/", today), (f"{SITE}/about/", today),
             (f"{SITE}/methods/", today),
-            (f"{SITE}/explorer/", today), (f"{SITE}/browse/", today)]
+            (f"{SITE}/explorer/", today), (f"{SITE}/browse/", today),
+            (f"{SITE}/valley/test/", today)]
     n = noindex = noregion = 0
     problems: list[str] = []
     for fp in sorted(pack_dir.glob("*.json")):   # sorted → deterministic slug collisions

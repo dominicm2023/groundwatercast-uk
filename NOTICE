@@ -10,6 +10,18 @@ governed by their own terms:
 
   - EA Hydrology API readings              — Open Government Licence v3.0
   - EA Flood-Monitoring API                — Open Government Licence v3.0
+  - OS Terrain 50                          — Open Government Licence v3.0
+    (committed derivative: web/valley/test/terrain.js — heightmap slice;
+     contains OS data © Crown copyright and database right 2026)
+  - OS Open Rivers                         — Open Government Licence v3.0
+    (committed derivative: web/valley/test/rivers.js — watercourse
+     polylines; contains OS data © Crown copyright and database right 2026)
+  - EA LIDAR Composite DTM 1m              — Open Government Licence v3.0
+    (committed derivative: web/valley/test/lidar.js — river-corridor
+     elevation slice; © Environment Agency copyright and/or database right)
+  - EA Water Rights Trading (NALD) extract — Open Government Licence v3.0
+    (committed derivative: web/valley/test/abstraction.js — licence points;
+     holder names/addresses deliberately stripped at ingest)
   - EA Aquifer Designation (Bedrock)       — Open Government Licence v3.0
     (committed: data/geology/aquifer_bedrock.geojson, OGL v3.0,
      contains Environment Agency information © Environment Agency and/or

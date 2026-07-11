@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The River Test in 3-D — a living chalk aquifer | GroundwaterCast</title>
+<meta name="description" content="A 3-D model of the River Test valley, source to sea: replay three years of measured rain, groundwater and river flow, watch the winterbournes advance and retreat, then walk the forecast six months ahead.">
+<link rel="canonical" href="https://groundwatercast.com/valley/test/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="GroundwaterCast UK">
+<meta property="og:title" content="The River Test in 3-D — a living chalk aquifer">
+<meta property="og:description" content="Replay three years of measured rain, groundwater and river flow in a 3-D valley — then walk the forecast six months ahead.">
+<meta property="og:url" content="https://groundwatercast.com/valley/test/">
+<meta property="og:image" content="https://groundwatercast.com/og/valley-test.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden;
+    background: linear-gradient(#0a1220 0%, #14213a 55%, #2b3350 100%);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color: #dfe8f4; }
+  #scene { width: 100vw; height: 100vh; display: block; touch-action: none; cursor: grab; }
+  .panel { position: fixed; background: rgba(10, 17, 30, 0.78);
+    border: 1px solid rgba(160, 190, 230, 0.18); border-radius: 12px;
+    padding: 12px 16px; backdrop-filter: blur(6px); }
+  #title { top: 14px; left: 14px; max-width: 340px; }
+  #title h1 { margin: 0 0 2px; font-size: 17px; font-weight: 650; letter-spacing: 0.2px; }
+  #title p { margin: 0; font-size: 12px; color: #9fb2cc; }
+  #controls { left: 14px; bottom: 14px; width: 330px; }
+  #controls .ctl { display: flex; align-items: center; gap: 8px; margin: 7px 0; }
+  #controls label { flex: 0 0 auto; font-size: 12px; color: #b9c8de; width: 118px; }
+  #controls input[type=range] { flex: 1; accent-color: #4da3e0; }
+  #track { position: relative; flex: 1; display: flex; align-items: center; }
+  #track input[type=range] { width: 100%; }
+  #today-tick { position: absolute; top: -4px; bottom: -1px; width: 2px;
+    background: #ffd479; opacity: 0.9; pointer-events: none; }
+  #today-tick::after { content: "today"; position: absolute; top: -11px;
+    left: 50%; transform: translateX(-50%); font-size: 9px; color: #ffd479;
+    white-space: nowrap; }
+  #season-word { font-size: 11px; color: #8fd0ff; width: 96px; flex: 0 0 auto; text-align: right; }
+  #play { background: #23334f; color: #cfe4ff; border: 1px solid #3a507a;
+    border-radius: 7px; width: 30px; height: 26px; cursor: pointer; font-size: 11px; }
+  .mode-btn { background: #1a2740; color: #b9c8de; border: 1px solid #3a507a;
+    border-radius: 7px; padding: 3px 10px; cursor: pointer; font-size: 11.5px; }
+  .mode-btn.active { background: #2f5e8f; color: #eaf4ff; border-color: #4da3e0; }
+  .legend { margin-top: 9px; padding-top: 9px; border-top: 1px solid rgba(160,190,230,.15);
+    font-size: 11.5px; color: #aebfd8; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+    margin-right: 6px; vertical-align: -1px; }
+  .legend .bar { border-radius: 3px; height: 6px; width: 14px; }
+  #compass { position: fixed; top: 14px; right: 14px; width: 44px; height: 44px;
+    border-radius: 50%; background: rgba(10, 17, 30, 0.78);
+    border: 1px solid rgba(160, 190, 230, 0.25); cursor: pointer; padding: 5px;
+    backdrop-filter: blur(6px); }
+  #compass:hover { border-color: #4da3e0; }
+  #compass svg { width: 100%; height: 100%; display: block;
+    transition: transform 0.1s linear; }
+  #card { top: 68px; right: 14px; width: 250px; display: none; }
+  #card h3 { margin: 0 0 6px; font-size: 14px; }
+  #card .row { font-size: 12px; margin: 3px 0; color: #c4d2e6; }
+  #card .note { font-size: 10.5px; color: #7d8ca3; margin-top: 7px; }
+  #disclaimer { right: 14px; bottom: 14px; font-size: 10.5px; color: #8593aa;
+    max-width: 250px; padding: 8px 12px; }
+  #attr-toggle { display: none; }
+  /* mobile: the attribution collapses to an (i) chip instead of vanishing —
+     the OGL credit must stay reachable on every screen */
+  #disclaimer.collapsed { max-width: none; padding: 6px 10px; cursor: pointer; }
+  #disclaimer.collapsed #attr-toggle { display: inline; font-size: 14px;
+    color: #9fb6d4; }
+  #disclaimer.collapsed #attr-text { display: none; }
+  #disclaimer.expanded { cursor: pointer; }
+  #story-cap { left: 50%; transform: translateX(-50%); bottom: 48px;
+    max-width: 520px; text-align: center; font-size: 15px; line-height: 1.5;
+    color: #eaf2fb; padding: 12px 22px; opacity: 0; pointer-events: none;
+    transition: opacity 0.6s ease; }
+  #story-cap.on { opacity: 1; }
+  #loader { position: fixed; inset: 0; z-index: 40; display: flex;
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px; background: linear-gradient(#0a1220 0%, #14213a 55%, #2b3350 100%);
+    transition: opacity 0.7s ease; }
+  #loader.done { opacity: 0; pointer-events: none; }
+  #loader .block { width: 52px; height: 52px; border-radius: 8px;
+    border: 2px solid rgba(160, 190, 230, 0.45); overflow: hidden;
+    position: relative; }
+  #loader .water { position: absolute; left: 0; right: 0; bottom: 0;
+    height: 100%; background: linear-gradient(#4da3e0, #2a5f8f);
+    transform: translateY(75%); animation: fill 2.4s ease-in-out infinite; }
+  @keyframes fill { 0%, 100% { transform: translateY(75%); }
+                    50% { transform: translateY(20%); } }
+  @media (prefers-reduced-motion: reduce) { #loader .water { animation: none;
+    transform: translateY(40%); } }
+  #loader .ld-main { font-size: 15px; color: #dfe8f4; letter-spacing: 0.2px; }
+  #loader .ld-sub { font-size: 11.5px; color: #8fa3bd; max-width: 300px;
+    text-align: center; line-height: 1.5; }
+  @media (max-width: 640px) {
+    #title { max-width: 240px; } #title p { display: none; }
+    #controls { width: calc(100vw - 60px); padding: 8px 12px; }
+    /* the legend is reference furniture — on a phone the tap cards carry the
+       explanations, and the panel must not eat 40% of the screen */
+    .legend { display: none; }
+    #timeline-note { display: none !important; }
+    #card { top: auto; bottom: 175px; }
+  }
+</style>
+</head>
+<body>
+<div id="loader" aria-label="Loading the 3-D valley">
+  <div class="block"><div class="water"></div></div>
+  <div class="ld-main">Building the valley…</div>
+  <div class="ld-sub">Terrain, rivers and three years of measurements —
+    about 6&nbsp;MB of open data. Worth the wait.</div>
+</div>
+<canvas id="scene"></canvas>
+
+<div class="panel" id="title">
+  <h1>The River Test, beneath the valley</h1>
+  <p>A chalk aquifer in 3-D, source to sea — drag to orbit, right-drag or
+     arrow keys to pan, double-click to recentre, scroll to zoom, click a
+     borehole or a gauge. Replay three years of measurements, walk the
+     forecast (today → 14 days → 6 months), and watch the winterbournes
+     advance and retreat.</p>
+  <button id="story" class="mode-btn" style="display:none;margin-top:8px"
+    title="A 70-second guided tour: rain, the water table, the winterbournes, the forecast">▶ Take the tour</button>
+</div>
+
+<div class="panel" id="story-cap"><span id="story-text"></span></div>
+
+<div class="panel" id="controls">
+  <div class="ctl" id="mode-ctl" style="display:none">
+    <label>Showing</label>
+    <span id="region-word" style="font-size:12px;color:#8fd0ff;flex:1">observed history</span>
+    <label for="ghosts" style="width:auto">P10–P90</label>
+    <input id="ghosts" type="checkbox" checked style="flex:0 0 auto">
+  </div>
+  <div class="ctl">
+    <label>View</label>
+    <button id="view-landscape" class="mode-btn active" title="The surface story: terrain, rivers, springs">Landscape</button>
+    <button id="view-beneath" class="mode-btn" title="The aquifer story: ground turns to glass, the water table and its drift become the subject">Beneath</button>
+  </div>
+  <div class="ctl">
+    <label for="season" id="slider-label">Groundwater season</label>
+    <div id="track">
+      <input id="season" type="range" min="-100" max="100" value="15">
+      <div id="today-tick" style="display:none" title="today"></div>
+    </div>
+    <span id="season-word">normal</span>
+    <button id="play" title="Animate">▶</button>
+  </div>
+  <div id="timeline-note" style="display:none;font-size:10.5px;color:#7d8ca3;margin:-3px 0 5px 2px">
+    days 0–14: published daily fan (P50) · months: seasonal outlook — experimental
+  </div>
+  <div class="ctl">
+    <label for="opacity">Ground opacity</label>
+    <input id="opacity" type="range" min="10" max="100" value="55">
+  </div>
+  <div class="ctl">
+    <label for="spin">Slow orbit</label>
+    <input id="spin" type="checkbox" checked>
+    <label for="abs" style="width:auto;margin-left:12px">Abstraction</label>
+    <input id="abs" type="checkbox" style="flex:0 0 auto">
+  </div>
+  <div class="legend">
+    <span><i style="background:#1f77b4"></i>above normal</span>
+    <span><i style="background:#8a8a8a"></i>near normal</span>
+    <span><i style="background:#d4a017"></i>below normal</span>
+    <span><i class="bar" style="background:#2f8fd6"></i>water table</span>
+    <span><i style="background:#9fe0ff"></i>springs rising</span>
+    <span><i class="bar" style="background:#d8d2b8"></i>dry winterbourne</span>
+    <span><i class="bar" style="background:#7fc4f0;opacity:.45"></i>P10–P90 envelope</span>
+    <span><i style="background:#8a5a33;border-radius:2px"></i>abstraction (licensed)</span>
+    <span id="drift-key" style="display:none"><i style="background:#bfe9ff"></i>gradient drift (indicative)</span>
+    <span><i style="background:#36c9c9;border-radius:2px"></i>flow gauge (measured)</span>
+  </div>
+</div>
+
+<button id="compass" title="Reset view — north up" aria-label="Reset view, north up">
+  <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+    <g id="compass-needle">
+      <polygon points="20,4 15,20 25,20" fill="#e05b4f"/>
+      <polygon points="20,36 15,20 25,20" fill="#9fb6d4"/>
+      <circle cx="20" cy="20" r="2.4" fill="#dfe8f4"/>
+    </g>
+  </svg>
+</button>
+
+<div class="panel" id="card"></div>
+
+<div class="panel" id="disclaimer">
+  <span id="attr-toggle" aria-hidden="true">ⓘ</span><span id="attr-text">
+  <b>5× vertical exaggeration</b>. Terrain: OS Terrain 50 &amp; EA LIDAR
+  Composite DTM; rivers: OS Open Rivers — contains OS data © Crown copyright
+  and database right 2026 and Environment Agency data (both OGL v3).
+  Boreholes, rainfall, river flow &amp; forecasts: Environment Agency data
+  (OGL v3) via GroundwaterCast. The water-table surface between boreholes is
+  indicative, not a measurement; drift motes show the downgradient direction
+  of that interpolated surface, not measured flow. Below the tidal limit at
+  Redbridge the water is tidal — drawn for completeness, not modelled. Not a
+  flood or drought warning.</span>
+</div>
+
+<script src="vendor/three.global.min.js"></script>
+<script src="data.js"></script>
+<!-- Real terrain (OS Terrain 50 heightmap, built by scripts/build_terrain_tile.py).
+     Optional: when the file is absent the prototype falls back to the
+     illustrative noise field. -->
+<script src="terrain.js"></script>
+<!-- Adaptive terrain mesh (scripts/build_valley_mesh.py). Optional: falls
+     back to the regular grid when absent. -->
+<script src="mesh.js"></script>
+<!-- LIDAR corridor tier (scripts/build_lidar_corridor.py, EA Composite DTM).
+     Optional: groundAt falls back to the 50 m heightmap when absent. -->
+<script src="lidar.js"></script>
+<!-- Real river geometry (OS Open Rivers main stems, scripts/build_valley_rivers.py).
+     Optional: when absent the hand-sketched courses in data.js are used. -->
+<script src="rivers.js"></script>
+<!-- Real pack stations (scripts/build_valley_stations.py). Optional: when
+     absent the prototype falls back to the illustrative boreholes. -->
+<script src="stations.js"></script>
+<!-- Licensed abstraction points (scripts/build_abstraction_points.py, EA OGL v3;
+     holder identities stripped). Optional layer, off by default. -->
+<script src="abstraction.js"></script>
+<!-- Observed weekly rainfall (scripts/build_valley_rainfall.py, EA Hydrology
+     archive). Optional: History mode simply rains nothing when absent. -->
+<script src="rainfall.js"></script>
+<!-- Gauged river flow (scripts/build_valley_flow.py, EA Hydrology archive).
+     Optional: no gauge markers when absent; lane pace stays constant. -->
+<script src="flow.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
