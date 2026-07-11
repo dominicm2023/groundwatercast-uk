@@ -1777,6 +1777,28 @@
       tick.style.display = "block";
       tick.style.left = (SPLIT * 100).toFixed(1) + "%";
     }
+    // track markers: each January in the observed years + the end of the fan
+    const marks = document.getElementById("tl-marks");
+    if (marks && HN0) {
+      const addTick = (frac, label) => {
+        const el = document.createElement("i");
+        el.className = "tl-tick";
+        el.style.left = (100 * frac).toFixed(2) + "%";
+        const b = document.createElement("b");
+        b.textContent = label;
+        el.appendChild(b);
+        marks.appendChild(el);
+      };
+      let seen = HWEEKS[0].slice(0, 4);
+      for (let k = 1; k < HN0; k++) {
+        const y = HWEEKS[k].slice(0, 4);
+        if (y !== seen) {
+          seen = y;
+          addTick(tkToSlider(k) / SLMAX, y);
+        }
+      }
+      if (NF > 1) addTick(tkToSlider(HN0 + NFAN) / SLMAX, "day 14");
+    }
     ghostsEl.addEventListener("change", () => { if (mode === "forecast") setTimeline(tk); });
   }
   seasonEl.addEventListener("input", () => {
@@ -1863,6 +1885,7 @@
     stopSpin();
     playing = false; playEl.textContent = "▶";
     document.getElementById("controls").style.display = "none";
+    document.getElementById("timeline-bar").style.display = "none";
     document.getElementById("card").style.display = "none";
     selected = null; selectedFlow = null;
     storyBtn.textContent = "■ Stop the tour";
@@ -1875,6 +1898,7 @@
     story = null;
     capEl.classList.remove("on");
     document.getElementById("controls").style.display = "";
+    document.getElementById("timeline-bar").style.display = "";
     storyBtn.textContent = "▶ Take the tour";
     setView("landscape");
   }
