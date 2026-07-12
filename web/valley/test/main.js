@@ -1730,17 +1730,28 @@
   const SLMAX = 1000;
   const SPLIT = (HN0 && FRAMES) ? 0.7 : (HN0 ? 1 : 0);
   const NF = FRAMES ? FRAMES.length : 0;
+  // Within the forecast section the fan is 14 near-identical daily frames
+  // while the months are where the story lives — so the fan gets FSPLIT of
+  // the section and the seasonal months get the rest.
+  const NSEA = Math.max(0, NF - 1 - NFAN);    // seasonal frames after the fan
+  const FSPLIT = NSEA ? 0.2 : 1;
+  function fcFrac(j) {                        // forecast frame j -> [0, 1]
+    if (j <= NFAN) return NFAN ? (j / NFAN) * FSPLIT : 0;
+    return FSPLIT + (1 - FSPLIT) * ((j - NFAN) / NSEA);
+  }
   function tkToSlider(k) {
     if (k < HN0)                              // history: [0, split) exclusive —
       return (k / HN0) * SPLIT * SLMAX;       // the split itself IS today
-    const f = NF > 1 ? (k - HN0) / (NF - 1) : 0;
-    return SLMAX * (SPLIT + (1 - SPLIT) * f);
+    return SLMAX * (SPLIT + (1 - SPLIT) * fcFrac(k - HN0));
   }
   function sliderToTk(v) {
     if (HN0 && v < SPLIT * SLMAX)
       return Math.min(HN0 - 1, Math.round((v / (SPLIT * SLMAX)) * HN0));
     const f = (v - SPLIT * SLMAX) / ((1 - SPLIT) * SLMAX || 1);
-    return HN0 + Math.max(0, Math.round(f * (NF - 1)));
+    const j = f <= FSPLIT
+      ? Math.round((f / FSPLIT) * NFAN)
+      : NFAN + Math.round(((f - FSPLIT) / (1 - FSPLIT)) * NSEA);
+    return HN0 + Math.max(0, Math.min(NF - 1, j));
   }
   function setTimeline(k) {
     tk = Math.max(0, Math.min(TL - 1, Math.round(k)));
@@ -1755,7 +1766,9 @@
     const rw = document.getElementById("region-word");
     if (rw) rw.textContent = mode === "history"
       ? "observed history (EA measurements)"
-      : "published forecast — P50" + (SMONTHS.length ? " + seasonal" : "");
+      : tk - HN0 > NFAN
+        ? "seasonal outlook — experimental"
+        : "published 14-day forecast (P50)";
     if (mode === "history") setHist(tk);
     else setFrame(tk - HN0);
   }
@@ -1763,14 +1776,9 @@
     seasonEl.min = "0"; seasonEl.max = String(SLMAX); seasonEl.step = "1";
     document.getElementById("slider-label").textContent = "Timeline";
     document.getElementById("mode-ctl").style.display = "flex";
-    const tnote = document.getElementById("timeline-note");
-    if (tnote) {
-      tnote.style.display = "block";
-      tnote.textContent = (HN0 ? "3 years observed weekly" +
-          (RAIN ? " + rain" : "") + " · " : "")
-        + "today → day 14: published fan (P50)"
-        + (SMONTHS.length ? " · months: seasonal — experimental" : "");
-    }
+    // (the old caption under the track overlapped the tick labels — the
+    // markers now carry its content, and "experimental" lives in the
+    // Showing readout)
     // the today tick sits exactly at the history/forecast split
     if (HN0 && FRAMES) {
       const tick = document.getElementById("today-tick");
@@ -1798,6 +1806,10 @@
         }
       }
       if (NF > 1) addTick(tkToSlider(HN0 + NFAN) / SLMAX, "day 14");
+      // unlabelled ticks give the seasonal months their rhythm; the readout
+      // names whichever one the thumb is on
+      for (let j = NFAN + 1; j < NF; j++)
+        addTick(tkToSlider(HN0 + j) / SLMAX, "");
     }
     ghostsEl.addEventListener("change", () => { if (mode === "forecast") setTimeline(tk); });
   }
