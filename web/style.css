@@ -522,3 +522,4 @@ a.brand, a.brand:hover { color: #fff; text-decoration: none; }
 .ld-import-bar button:hover { background: rgba(255, 255, 255, 0.15); }
 .ld-import-yes:hover { background: #eaf1f8 !important; }
 .ld-share-note { margin: 6px 0 0; }
+.ld-pilot { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--line); }

@@ -179,6 +179,9 @@
         `</div>` +
         `<p class="caption ld-share-note">A share link keeps your levels in the URL only — ` +
           `they never reach our server. Anyone opening it is asked before it merges.</p>` +
+        `<p class="caption ld-pilot">Prefer these watched for you? We're piloting ` +
+          `<b>custom trigger levels</b> — your levels evaluated in every morning's ` +
+          `forecast run, with email alerts. <a href="/contact/">Get in touch</a>.</p>` +
       `</div>` +
     `</div>`;
   }

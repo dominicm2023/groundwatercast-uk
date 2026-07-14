@@ -96,9 +96,11 @@ def test_build_smoke(tmp_path):
     sm = (web / "sitemap.xml").read_text(encoding="utf-8")
     assert "<loc>https://groundwatercast.com/b/wilgate-green/</loc>" in sm
     assert "/b/empty-bh/" not in sm       # noindex page excluded from sitemap
-    assert stats["sitemap_urls"] == 6     # home + about + methods + explorer + browse + wilgate-green
+    # home + about + methods + contact + explorer + browse + valley + wilgate-green
+    assert stats["sitemap_urls"] == 8
     assert "<loc>https://groundwatercast.com/methods/</loc>" in sm
     assert "<loc>https://groundwatercast.com/about/</loc>" in sm
+    assert "<loc>https://groundwatercast.com/contact/</loc>" in sm
     assert "<loc>https://groundwatercast.com/explorer/</loc>" in sm
     assert "Sitemap: https://groundwatercast.com/sitemap.xml" in (web / "robots.txt").read_text()
     # lastmod anti-churn: a second build with unchanged DATA keeps the same

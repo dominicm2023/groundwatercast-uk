@@ -319,7 +319,7 @@ def _page(d, sl, region, indexable, card: str | None = None):
         'Independent open-source project — not affiliated with or endorsed by any employer, the '
         'Environment Agency, ECMWF, or any water company.</p>'
         '<p class="caption">Contains EA data (OGL v3) · ECMWF Open Data (CC-BY-4.0) · Copernicus '
-        'ERA5/SEAS5 · Free &amp; open source (MIT).</p></footer>'
+        'ERA5/SEAS5 · Free &amp; open source (MIT) · <a href="/contact/">Contact</a>.</p></footer>'
         '<script src="/config.js"></script><script src="/contract_fields.js"></script>'
         '<script src="/charts.js"></script><script src="/detail.js"></script>'
         '<script src="/watchlist.js"></script><script src="/ladders.js"></script>'
@@ -372,7 +372,8 @@ def _mini_shell(title, canonical, body):
         f'<div class="bore-wrap">{body}</div>'
         '<footer class="bore-foot"><p class="disclaimer"><b>Indicative, uncalibrated research '
         'forecast.</b> Not a flood or drought warning. England-only. Independent open-source '
-        'project — not affiliated with or endorsed by any employer.</p></footer></body></html>'
+        'project — not affiliated with or endorsed by any employer.</p>'
+        '<p class="caption"><a href="/contact/">Contact</a>.</p></footer></body></html>'
     )
 
 
@@ -429,7 +430,7 @@ def build(pack_dir: Path = PACK_DIR, out_dir: Path = OUT_DIR, today: str | None 
     entries: list[tuple] = []                                  # (slug, name, region)
     # home + top-level pages + directory (all editorial, always fresh-dated)
     urls = [(f"{SITE}/", today), (f"{SITE}/about/", today),
-            (f"{SITE}/methods/", today),
+            (f"{SITE}/methods/", today), (f"{SITE}/contact/", today),
             (f"{SITE}/explorer/", today), (f"{SITE}/browse/", today),
             (f"{SITE}/valley/test/", today)]
     n = noindex = noregion = 0

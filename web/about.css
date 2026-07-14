@@ -17,3 +17,12 @@
 .about-back:hover { background: #234b71; text-decoration: none; }
 .about-back.ghost { background: #fff; color: var(--ink); border: 1px solid #d3dde7; }
 .about-back.ghost:hover { background: #eef3f8; }
+
+/* Contact page — the one big action is the email address. */
+.contact-email-wrap { margin: 18px 0 6px; }
+.contact-email {
+  display: inline-block; font-size: 1.15rem; font-weight: 650;
+  background: var(--ink); color: #fff; padding: 12px 22px; border-radius: 9px;
+  word-break: break-all;
+}
+.contact-email:hover { background: #234b71; text-decoration: none; }
