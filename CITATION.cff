@@ -9,7 +9,8 @@ repository-code: "https://github.com/dominicm2023/groundwatercast-uk"
 url: "https://groundwatercast.com"
 abstract: >-
   Per-borehole probabilistic groundwater-level forecasts for England — a daily
-  14-day ensemble fan and a 6-month seasonal outlook — built entirely on free,
+  14-day ensemble fan and a 6-month seasonal outlook — plus daily low-flow
+  outlooks for chalk streams (RiverCast), built entirely on free,
   commercially-licensed open data (ECMWF Open Data, Copernicus CDS ERA5 + SEAS5,
   Environment Agency Hydrology), via calibrated Pastas transfer-function models.
 keywords:
@@ -17,6 +18,8 @@ keywords:
   - hydrology
   - forecasting
   - ensemble
+  - low-flow
+  - rivers
   - ERA5
   - ECMWF
   - SEAS5

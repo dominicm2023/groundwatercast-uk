@@ -3,8 +3,9 @@
 [![tests](https://github.com/dominicm2023/groundwatercast-uk/actions/workflows/tests.yml/badge.svg)](https://github.com/dominicm2023/groundwatercast-uk/actions/workflows/tests.yml)
 
 **Per-borehole probabilistic groundwater forecasts for England — a 14-day daily
-fan and a 6-month seasonal outlook — built entirely on free,
-commercially-licensed open data.**
+fan and a 6-month seasonal outlook — plus RiverCast, daily low-flow outlooks
+for chalk streams. Built entirely on free, commercially-licensed open data.
+Live at [groundwatercast.com](https://groundwatercast.com).**
 
 <p align="center">
   <img src="docs/img/scrubber.gif" width="820"
@@ -35,9 +36,11 @@ per monitored borehole, across three horizons in a single vocabulary —
   calibrated model, weighted by **ECMWF SEAS5** monthly rainfall terciles.
   Rebuilt monthly.
 
-> **Status: early.** The engine + explorer now span **~655 boreholes across
-> England**. Forecast uncertainty is **indicative — uncalibrated** until a full
-> archived winter has been verified; the seasonal outlook is **experimental**.
+> **Status: early.** The engine + explorer span **~1,378 monitored boreholes
+> across England, 687 of which carry the full forecast**, plus a **50-gauge
+> river low-flow pilot**. Forecast uncertainty is **indicative — uncalibrated**
+> until a full archived winter has been verified; the seasonal outlook is
+> **experimental**.
 >
 > Independent open-source project — **not affiliated with or endorsed by** the
 > Environment Agency, ECMWF, or any water company.
@@ -74,7 +77,7 @@ streamlit run app.py                # interactive dashboard → http://localhost
 
 The published, lightweight view is the static **MapLibre explorer**
 (`python scripts/serve_explorer.py`), which consumes the artifact pack — that's
-what will live at **groundwatercast.com**.
+what runs at **[groundwatercast.com](https://groundwatercast.com)**.
 
 ### Forecast + seasonal (extra setup)
 
@@ -121,6 +124,29 @@ thresholds:
 Boreholes without one fall back to their own P90 level, clearly badged as a
 proxy.
 
+## RiverCast — low-flow river forecasts (pilot)
+
+The same machinery, pointed at rivers: daily 14-day low-flow outlooks for
+**50 chalk streams and winterbournes** — the gauges that passed a per-gauge
+forecast-skill gate (a leakage-safe hindcast against a naive-recession
+baseline; **97 of 1,087 EA flow gauges** qualified tier-1, the pilot publishes
+the strongest chalk set). Each gauge gets a **two-pathway Pastas model on
+log-flow** — a slow baseflow path (the aquifer draining, the physics shared
+with the boreholes) plus a quickflow path — driven by the same 51-member ENS
+rainfall.
+
+Honesty caveats, carried on every river page: gauged flow **includes
+abstraction and discharge effects**; rating curves are least accurate exactly
+at low flows; Q95 thresholds are **climatological proxies**, not licence
+Hands-off-Flow values.
+
+The flow stages hang off the same `run_chain` groups (ingest `0c`, forecast
+`8f/8h-flow`, seasonal shadow `9c`) and **skip gracefully** when no flow pilot
+is set up, so the groundwater-only quick start above is unaffected. To build
+the river layer: `python -m scripts.build_flow_catalogue`, then
+`scripts.flow_fleet_scan` to score gauges and `scripts.select_flow_pilot` to
+choose the publishable set.
+
 ## How it works
 
 The diagram at the top **is** the pipeline: open sources → per-borehole
@@ -146,13 +172,15 @@ audit, small testable modules.
 
 ## Roadmap
 
-- ✅ **England-wide scale-up** — ~655 forecast boreholes on the CDS/ECMWF
+- ✅ **England-wide scale-up** — 687 forecast boreholes on the CDS/ECMWF
   open-data pipeline
-- 📋 **Public static explorer** at groundwatercast.com (consuming the daily pack)
+- ✅ **Public static explorer** — live at
+  [groundwatercast.com](https://groundwatercast.com), consuming the daily pack
+- ✅ **RiverCast pilot** — 50 chalk-stream gauges with daily low-flow outlooks
 - 📋 **Verification + fan calibration** after the first archived winter
+- 📋 **RiverCast expansion** — the remaining gate-passing gauges (97 tier-1
+  scored fleet-wide)
 - 📋 **Scotland adapter** (SEPA's separate time-series API)
-
-Full plan and the research behind it: [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Citation & licence
 
