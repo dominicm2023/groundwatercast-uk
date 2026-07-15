@@ -442,6 +442,13 @@ def build(pack_dir: Path = PACK_DIR, out_dir: Path = OUT_DIR, today: str | None 
         if not isinstance(d, dict):
             continue                     # defensive: only station detail dicts
         stn = d.get("station") or {}
+        if stn.get("station_type") == "flow":
+            # RiverCast gauges are explorer-only in v1 (launch-scope decision,
+            # build_plan.md Stage 7): every template below speaks groundwater
+            # ("borehole", "aquifer", mAOD levels), so a flow stub would be a
+            # misleading page AND a sitemap entry pointing at it. Skip until
+            # rivers earn their own stub template.
+            continue
         sid = stn.get("station_id")
         name = stn.get("name") or sid
         # Prefer the pack's canonical slug (assigned once in pack.py and shared

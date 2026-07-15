@@ -156,13 +156,18 @@ def fetch_seas5_cds(ref_month: date, points: dict[str, tuple[float, float]], *,
     pandas), so cdsapi/xarray stay out of that venv."""
     import tempfile
     import xarray as xr
-    try:
-        import cdsapi
-    except ImportError as exc:  # pragma: no cover - env-dependent
-        raise ImportError("SEAS5 CDS fetch needs 'cdsapi' + a CDS key "
-                          "(docs/free_data_migration.md W3)") from exc
 
-    client = client or cdsapi.Client()
+    if client is None:
+        # Hardened client (socket-timeout backstop + bounded retries) — the
+        # seasonal CDS fetch is exactly the stage that wedged overnight on
+        # 2026-07-07. cdsapi is only needed when no client is injected (tests
+        # pass a fake), so the import lives inside the branch.
+        try:
+            from src.data.cds_client import hardened_client
+            client = hardened_client()
+        except ImportError as exc:  # pragma: no cover - env-dependent
+            raise ImportError("SEAS5 CDS fetch needs 'cdsapi' + a CDS key "
+                              "(docs/free_data_migration.md W3)") from exc
     ref = pd.Period(pd.Timestamp(ref_month), freq="M")
     req = {
         "originating_centre": "ecmwf", "system": str(system),

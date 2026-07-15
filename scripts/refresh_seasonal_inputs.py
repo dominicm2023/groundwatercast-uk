@@ -17,6 +17,18 @@ network work:
      (``seasonal-monthly-single-levels``) cached per borehole; falls back to
      the per-point Open-Meteo seasonal API when CDS is unavailable.
 
+Also folds in the low-flow Rivers layer pilot gauges (build_plan.md Stage 6b,
+``_flow_pilot_points``): ``data/processed/flow_pilot.csv`` x
+``flow_catalogue.csv`` gives ``{gauge_id: (lat, lon)}``, merged into the SAME
+``points`` dict the GW fetch already builds — one fleet-wide fetch covers
+both station kinds, and ``scripts/build_flow_seasonal_shadow.py`` (the
+pastas-env compute step, run right after ``build_seasonal_outlook``) reads
+the resulting per-gauge caches with the exact same plain-pandas cache readers
+(``era5_precip.load_station_precip`` / ``pastas.io.load_pet`` / ``seas5.*``)
+build_seasonal_outlook.py uses for boreholes — no flow-specific fetch path.
+A host without the low-flow pilot set up yet (no ``flow_pilot.csv``)
+contributes nothing here and is unaffected.
+
 Run monthly (after SEAS5's update on the 5th), before build_seasonal_outlook:
   python -m scripts.refresh_seasonal_inputs            # incremental CDS top-up
   python -m scripts.refresh_seasonal_inputs --full     # full CDS backfill (cutover)
@@ -32,6 +44,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.data import era5_precip, pet
+from src.download.flow import resolve_flow_pilot_path
 from src.forecast.seasonal import seas5
 from src.forecast.ensemble.scope import select_scope
 
@@ -49,6 +62,34 @@ def _config_scope() -> str:
                 .get("pastas", {}).get("scope", "live"))
     except Exception:
         return "live"
+
+
+def _flow_pilot_points(cfg: dict) -> dict[str, tuple[float, float]]:
+    """``{gauge_id: (lat, lon)}`` for the low-flow pilot gauges (Stage 6b's
+    shadow archive) — folded into the same fetch this step already runs for
+    GW boreholes. Never raises: a host without ``flow_pilot.csv`` /
+    ``flow_catalogue.csv`` yet just contributes nothing (mirrors every other
+    low-flow stage's "absent optional subsystem" discipline)."""
+    # resolve_flow_pilot_path: the same helper build_flow_models.py's default
+    # and the flow ENS bridge call site (build_ensemble_members.py) use, so
+    # all four flow-pilot consumers agree on where the pilot CSV lives.
+    pilot_path = resolve_flow_pilot_path(cfg, ROOT)
+    cat_path = ROOT / "data" / "processed" / "flow_catalogue.csv"
+    if not pilot_path.exists() or not cat_path.exists():
+        return {}
+    try:
+        pilot = pd.read_csv(pilot_path, dtype={"gauge_id": str})
+        if pilot.empty:
+            return {}
+        cat = (pd.read_csv(cat_path, dtype={"station_id": str})
+               .dropna(subset=["lat", "lon"]).drop_duplicates("station_id")
+               .set_index("station_id"))
+    except Exception as exc:
+        print(f"  ! flow pilot points unavailable ({type(exc).__name__}: {exc}) "
+              f"— continuing with GW boreholes only")
+        return {}
+    return {gid: (float(cat.loc[gid, "lat"]), float(cat.loc[gid, "lon"]))
+            for gid in pilot["gauge_id"] if gid in cat.index}
 
 
 def _incremental_start(points: dict, cache_root: Path, full_start: date) -> date:
@@ -171,9 +212,17 @@ def main() -> int:
     points = {sid: (float(cat.loc[sid, "lat"]), float(cat.loc[sid, "lon"]))
               for sid in ids if sid in cat.index}
     skipped = len(ids) - len(points)
-    print(f"Seasonal inputs — scope={args.scope}, {len(points)} boreholes "
-          f"({skipped} skipped: no coords), ERA5/PET back to {start.year}, "
-          f"source={args.source}{' [FULL backfill]' if args.full else ''}")
+
+    flow_points = _flow_pilot_points(cfg)
+    if flow_points:
+        print(f"  + {len(flow_points)} low-flow pilot gauge(s) folded in "
+              f"(Stage 6b shadow archive)")
+        points.update(flow_points)
+
+    print(f"Seasonal inputs — scope={args.scope}, {len(points)} borehole(s)/"
+          f"gauge(s) ({skipped} skipped: no coords), ERA5/PET back to "
+          f"{start.year}, source={args.source}"
+          f"{' [FULL backfill]' if args.full else ''}")
 
     ok = 0
     if args.source in ("cds_ts", "cds"):

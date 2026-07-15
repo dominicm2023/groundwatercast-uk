@@ -16,6 +16,7 @@ from src.features.build import (
     create_features,
     get_station_group,
     join_timeseries,
+    reindex_to_calendar,
     resample_to_daily,
 )
 
@@ -533,3 +534,281 @@ class TestCreateFeaturesWeibullByGroup:
         df = _joined_frame(n=60)
         result = create_features(df, weibull_by_group_cfg=disabled, region_group="east")
         assert "Recharge_Weibull" not in result.columns
+
+
+# ---------------------------------------------------------------------------
+# reindex_to_calendar
+# ---------------------------------------------------------------------------
+
+def test_reindex_to_calendar_no_gap_is_noop():
+    """A fully contiguous daily index is unchanged by the calendar reindex."""
+    df = _joined_frame(30)
+    result = reindex_to_calendar(df)
+    pd.testing.assert_index_equal(result.index, df.index)
+    pd.testing.assert_frame_equal(result, df)
+
+
+def test_reindex_to_calendar_fills_gap_with_nan():
+    idx = pd.date_range("2020-01-01", periods=10, freq="1D", tz="UTC")
+    keep = idx.delete([4, 5])  # remove two consecutive days -> a gap
+    df = pd.DataFrame({"GW_Level": np.arange(len(keep), dtype=float)}, index=keep)
+    result = reindex_to_calendar(df)
+    assert len(result) == 10
+    assert result.index.equals(idx)
+    assert result.loc[idx[4], "GW_Level"].__class__ is float or pd.isna(result.loc[idx[4], "GW_Level"])
+    assert pd.isna(result.loc[idx[4], "GW_Level"])
+    assert pd.isna(result.loc[idx[5], "GW_Level"])
+
+
+def test_reindex_to_calendar_preserves_tz():
+    idx = pd.date_range("2020-01-01", periods=5, freq="1D", tz="UTC")
+    df = pd.DataFrame({"v": range(5)}, index=idx)
+    result = reindex_to_calendar(df)
+    assert result.index.tz is not None
+    assert str(result.index.tz) == "UTC"
+
+
+def test_reindex_to_calendar_empty_input_returns_empty():
+    df = pd.DataFrame({"v": []}, index=pd.DatetimeIndex([], tz="UTC"))
+    result = reindex_to_calendar(df)
+    assert result.empty
+
+
+# ---------------------------------------------------------------------------
+# create_features — calendar-true equivalence guarantee (BUGS.md: lag /
+# rolling / Weibull features computed positionally over a gap-collapsed
+# daily index)
+# ---------------------------------------------------------------------------
+
+def _old_create_features_positional(
+    df: pd.DataFrame,
+    weibull_cfg: dict | None = None,
+) -> pd.DataFrame:
+    """Pre-fix behaviour, replicated verbatim (not imported) as the baseline
+    for the mandatory no-gap equivalence test: lag/rolling/Weibull features
+    computed directly on the input's own (possibly gap-collapsed) index, with
+    NO calendar reindex step first. This is deliberately a frozen copy of the
+    old algorithm, not a call into the fixed create_features."""
+    df = df.copy()
+    dates = df.index.tz_convert("UTC").normalize()
+
+    df["GW_Lag1"] = df["GW_Level"].shift(1)
+    df["GW_Lag7"] = df["GW_Level"].shift(7)
+    df["GW_Lag30"] = df["GW_Level"].shift(30)
+
+    df["Rain_1d_sum"] = df["Rainfall"].rolling(1).sum()
+    df["Rain_3d_sum"] = df["Rainfall"].rolling(3).sum()
+    df["Rain_7d_sum"] = df["Rainfall"].rolling(7).sum()
+
+    doy = dates.day_of_year.values
+    df["day_of_year"] = doy
+    df["Sin_DOY"] = np.sin(2 * np.pi * doy / 365.25)
+    df["Cos_DOY"] = np.cos(2 * np.pi * doy / 365.25)
+
+    required_dropna = [
+        "GW_Lag1", "GW_Lag7", "GW_Lag30",
+        "Rain_1d_sum", "Rain_3d_sum", "Rain_7d_sum",
+    ]
+
+    if weibull_cfg is not None and weibull_cfg.get("enabled", False):
+        kernel = compute_weibull_kernel(
+            float(weibull_cfg["k"]), float(weibull_cfg["lambda"]),
+            int(weibull_cfg["lag_days"]),
+        )
+        shifted = df["Rainfall"].shift(1)
+        df["Recharge_Weibull"] = shifted.rolling(
+            window=len(kernel), min_periods=len(kernel)
+        ).apply(lambda x: float(np.dot(x[::-1], kernel)), raw=True)
+        required_dropna.append("Recharge_Weibull")
+
+    df = df.dropna(subset=required_dropna)
+    return df
+
+
+def test_create_features_equivalence_no_gaps_plain():
+    """MANDATORY equivalence guarantee: for a station with a fully contiguous
+    daily index and no NaN rainfall, the calendar-reindex fix must produce
+    EXACTLY the same output (values and row set) as the pre-fix positional
+    computation — the reindex is a no-op on gap-free data."""
+    df = _joined_frame(150)
+    old = _old_create_features_positional(df)
+    new = create_features(df)
+    pd.testing.assert_frame_equal(old, new)
+
+
+def test_create_features_equivalence_no_gaps_with_weibull():
+    df = _joined_frame(150)
+    old = _old_create_features_positional(df, weibull_cfg=_WEIBULL_CFG)
+    new = create_features(df, weibull_cfg=_WEIBULL_CFG)
+    pd.testing.assert_frame_equal(old, new)
+
+
+# ---------------------------------------------------------------------------
+# create_features / reindex_to_calendar — gap behaviour (the bug fix itself)
+# ---------------------------------------------------------------------------
+
+def _frame_with_gap(n: int = 150, gap_start: int = 60, gap_len: int = 21,
+                    start: str = "2020-01-01") -> tuple[pd.DataFrame, pd.DatetimeIndex]:
+    """A joined daily frame with a `gap_len`-day outage starting at position
+    `gap_start` removed ENTIRELY from the index (simulating what
+    resample_to_daily's dropna + join_timeseries's required-rainfall drop
+    leave behind: no row at all for a missing day, not a NaN-valued row).
+    Returns (frame, full_calendar_index) so callers can reference gap dates.
+    """
+    full_idx = pd.date_range(start, periods=n, freq="1D", tz="UTC")
+    keep = full_idx[:gap_start].append(full_idx[gap_start + gap_len:])
+    df = pd.DataFrame({
+        "GW_Level": np.linspace(10, 12, len(keep)),
+        "Rainfall": np.ones(len(keep)),
+    }, index=keep)
+    return df, full_idx
+
+
+def test_gw_lags_calendar_true_across_21day_outage():
+    """A 21-day GW outage: post-gap GW_Lag1/7/30 must be NaN until the
+    calendar lag is genuinely available, not merely 'N surviving rows back'
+    (the pre-fix positional bug) — checked at specific dates."""
+    df, full_idx = _frame_with_gap(n=150, gap_start=60, gap_len=21)
+    grid = reindex_to_calendar(df)
+    gw_lag1 = grid["GW_Level"].shift(1)
+    gw_lag7 = grid["GW_Level"].shift(7)
+    gw_lag30 = grid["GW_Level"].shift(30)
+
+    first_obs_after_gap = full_idx[60 + 21]  # first real reading after the outage
+
+    # GW_Lag1: NaN the day the outage ends (references the still-missing
+    # prior day), valid exactly one calendar day later.
+    assert pd.isna(gw_lag1.loc[first_obs_after_gap])
+    assert not pd.isna(gw_lag1.loc[first_obs_after_gap + pd.Timedelta(days=1)])
+
+    # GW_Lag7: valid only once the calendar lag reaches back to the first
+    # post-gap reading (7 calendar days after it), not 7 sooner.
+    lag7_from = first_obs_after_gap + pd.Timedelta(days=7)
+    assert pd.isna(gw_lag7.loc[lag7_from - pd.Timedelta(days=1)])
+    assert not pd.isna(gw_lag7.loc[lag7_from])
+
+    # GW_Lag30: same logic, 30 calendar days after the first post-gap reading.
+    lag30_from = first_obs_after_gap + pd.Timedelta(days=30)
+    assert pd.isna(gw_lag30.loc[lag30_from - pd.Timedelta(days=1)])
+    assert not pd.isna(gw_lag30.loc[lag30_from])
+
+
+def test_rain_3d_sum_nan_across_gap():
+    """A 3-day rolling rainfall sum spanning a gap-collapsed missing day must
+    be NaN (strict, min_periods=3), not silently sum 3 rows spanning more
+    than 3 calendar days."""
+    idx = pd.date_range("2020-01-01", periods=20, freq="1D", tz="UTC")
+    keep = idx.delete(10)  # a single missing calendar day
+    df = pd.DataFrame({
+        "GW_Level": np.linspace(10, 11, len(keep)),
+        "Rainfall": np.ones(len(keep)),
+    }, index=keep)
+    grid = reindex_to_calendar(df)
+    rain_3d = grid["Rainfall"].rolling(3, min_periods=3).sum()
+
+    gap_date = idx[10]
+    for offset in range(3):
+        d = gap_date + pd.Timedelta(days=offset)
+        assert pd.isna(rain_3d.loc[d]), f"expected NaN at {d} (window touches the gap)"
+    clear_date = gap_date + pd.Timedelta(days=3)
+    assert not pd.isna(rain_3d.loc[clear_date]), "first fully-clear window should compute"
+
+
+def test_create_features_drops_more_rows_on_gappy_station():
+    """The training table SHRINKS at gappy stations relative to positional
+    computation (which kept wrong rows) — that is the point of the fix."""
+    gap_free = _joined_frame(150)
+    gappy, _ = _frame_with_gap(n=150, gap_start=60, gap_len=21)
+    result_full = create_features(gap_free)
+    result_gap = create_features(gappy)
+    assert len(result_gap) < len(result_full)
+    # No NaNs leak into the required columns of the surviving rows.
+    required = ["GW_Lag1", "GW_Lag7", "GW_Lag30",
+                "Rain_1d_sum", "Rain_3d_sum", "Rain_7d_sum"]
+    assert result_gap[required].isna().sum().sum() == 0
+    # Row set is still "days with a reading": every surviving date was one of
+    # the actually-observed (non-gap) dates.
+    assert result_gap.index.isin(gappy.index).all()
+
+
+# ---------------------------------------------------------------------------
+# apply_weibull_recharge — bounded tolerance (item 4 of the gap-features fix)
+# ---------------------------------------------------------------------------
+
+def test_weibull_tolerance_96pct_coverage_computes():
+    """A lag window with 96% coverage (2/50 days missing) is within
+    tolerance: NaN rainfall in the window is treated as zero and a value is
+    computed."""
+    lag_days = 50
+    kernel = compute_weibull_kernel(k=1.5, lam=15.0, lag_days=lag_days)
+    vals = np.ones(200)
+    vals[50:52] = np.nan  # 2 missing days inside the window feeding index 100
+    rainfall = pd.Series(vals)
+    result = apply_weibull_recharge(rainfall, kernel)
+    assert not np.isnan(result.iloc[100])
+
+
+def test_weibull_tolerance_90pct_coverage_is_nan():
+    """A lag window with 90% coverage (5/50 days missing) exceeds the
+    tolerance bound: the result is NaN rather than a number built on a
+    mostly-missing window."""
+    lag_days = 50
+    kernel = compute_weibull_kernel(k=1.5, lam=15.0, lag_days=lag_days)
+    vals = np.ones(200)
+    vals[50:55] = np.nan  # 5 missing days inside the window feeding index 100
+    rainfall = pd.Series(vals)
+    result = apply_weibull_recharge(rainfall, kernel)
+    assert np.isnan(result.iloc[100])
+
+
+def test_weibull_recharge_no_gaps_matches_dot_product_exactly():
+    """Sanity: with zero missing rainfall, the tolerance path is a no-op and
+    the convolution matches the direct dot-product definition."""
+    rng = np.random.default_rng(1)
+    rainfall = pd.Series(np.abs(rng.normal(2, 1, 150)))
+    kernel = compute_weibull_kernel(k=1.5, lam=15.0, lag_days=50)
+    result = apply_weibull_recharge(rainfall, kernel)
+    expected = float(np.dot(rainfall.iloc[49:99].to_numpy()[::-1], kernel))
+    assert result.iloc[99] == pytest.approx(expected)
+
+
+# ---------------------------------------------------------------------------
+# create_features — gap handling across multi-kernel / by-group Weibull
+# variants (item 4/5 must cover ALL kernel variants, not just pooled)
+# ---------------------------------------------------------------------------
+
+class TestGapHandlingAcrossKernelVariants:
+    def _gappy_frame(self, n=150, gap_start=60, gap_len=10):
+        df, _ = _frame_with_gap(n=n, gap_start=gap_start, gap_len=gap_len)
+        return df
+
+    def test_multi_kernel_survives_gap_with_reduced_rows(self):
+        gap_free = _joined_frame(150)
+        gappy = self._gappy_frame()
+        result_full = create_features(gap_free, weibull_multi_cfg=_WEIBULL_MULTI_CFG,
+                                      region_group="east")
+        result_gap = create_features(gappy, weibull_multi_cfg=_WEIBULL_MULTI_CFG,
+                                     region_group="east")
+        assert len(result_gap) < len(result_full)
+        required = ["GW_Lag1", "GW_Lag7", "GW_Lag30",
+                    "Rain_1d_sum", "Rain_3d_sum", "Rain_7d_sum",
+                    "Recharge_East_masked"]
+        assert result_gap[required].isna().sum().sum() == 0
+
+    def test_by_group_survives_gap_with_reduced_rows(self):
+        gap_free = _joined_frame(150)
+        gappy = self._gappy_frame()
+        result_full = create_features(gap_free, weibull_by_group_cfg=_WEIBULL_BY_GROUP_CFG,
+                                      region_group="west")
+        result_gap = create_features(gappy, weibull_by_group_cfg=_WEIBULL_BY_GROUP_CFG,
+                                     region_group="west")
+        assert len(result_gap) < len(result_full)
+        assert result_gap["Recharge_Weibull"].isna().sum() == 0
+
+    def test_pooled_weibull_survives_gap_with_reduced_rows(self):
+        gap_free = _joined_frame(150)
+        gappy = self._gappy_frame(gap_len=21)
+        result_full = create_features(gap_free, weibull_cfg=_WEIBULL_CFG)
+        result_gap = create_features(gappy, weibull_cfg=_WEIBULL_CFG)
+        assert len(result_gap) < len(result_full)
+        assert result_gap["Recharge_Weibull"].isna().sum() == 0

@@ -27,6 +27,66 @@ def _members(sid, dates, n_members=51, level=50.0, slope=-0.05,
     return pd.DataFrame(rows)
 
 
+class TestBreachDirection:
+    """_breach_from_samples' direction param (low-flow build_plan.md Stage 6):
+    default "above" must reproduce the pre-existing GW behaviour exactly;
+    "below" is the new low-flow sense, sharing everything except the crossing
+    test and the first-crossing search."""
+
+    def _dates(self, n=14):
+        return pd.date_range("2026-06-07", periods=n, freq="D")
+
+    def test_default_direction_is_above_unchanged(self):
+        dates = self._dates()
+        rng = np.random.default_rng(0)
+        samples = rng.normal(50.0, 1.0, size=(500, 14))
+        explicit = S._breach_from_samples(samples, dates, 50.0, direction="above")
+        default = S._breach_from_samples(samples, dates, 50.0)
+        assert explicit["p_breach"] == default["p_breach"]
+        assert explicit["p_breach_14d"] == default["p_breach_14d"]
+
+    def test_below_direction_fires_on_a_dip(self):
+        # A trajectory that dips below the threshold mid-window then recovers.
+        dates = self._dates()
+        samples = np.tile(np.array([10.0] * 5 + [2.0] * 4 + [10.0] * 5), (200, 1))
+        out = S._breach_from_samples(samples, dates, 5.0, direction="below")
+        assert out["p_breach"] == pytest.approx(1.0)
+        assert out["first_cross_median_lead"] == pytest.approx(6.0)  # day the dip starts
+
+    def test_below_direction_never_fires_when_always_above(self):
+        dates = self._dates()
+        samples = np.full((200, 14), 10.0)
+        out = S._breach_from_samples(samples, dates, 5.0, direction="below")
+        assert out["p_breach"] == 0.0
+        assert out["censored_frac"] == 1.0
+        assert pd.isna(out["first_cross_median"])
+
+    def test_above_and_below_disagree_on_a_low_plateau(self):
+        # A trajectory that stays on a low plateau (never rises to a high
+        # bar) but starts there too (so it's "below" a low bar from day 1) —
+        # direction must actually change the answer, not just be accepted
+        # and ignored: "above" a bar it never reaches never fires; "below" a
+        # bar it starts under fires immediately.
+        dates = self._dates()
+        samples = np.full((200, 14), 3.0)
+        above = S._breach_from_samples(samples, dates, 9.0, direction="above")
+        below = S._breach_from_samples(samples, dates, 9.0, direction="below")
+        assert above["p_breach"] == 0.0
+        assert below["p_breach"] == pytest.approx(1.0)
+
+    def test_invalid_direction_rejected(self):
+        dates = self._dates()
+        samples = np.full((10, 14), 1.0)
+        with pytest.raises(ValueError):
+            S._breach_from_samples(samples, dates, 1.0, direction="sideways")
+
+    def test_none_threshold_returns_nan_regardless_of_direction(self):
+        dates = self._dates()
+        samples = np.full((10, 14), 1.0)
+        out = S._breach_from_samples(samples, dates, None, direction="below")
+        assert np.isnan(out["p_breach"])
+
+
 def test_ar1_noise_matches_marginal_sd_vector():
     rng = np.random.default_rng(0)
     sd = np.array([0.3 + 0.05 * i for i in range(14)])
@@ -162,6 +222,21 @@ def test_scope_provenance_carried_and_defaulted():
                                   run=pd.Timestamp("2026-06-09", tz="UTC"),
                                   n_samples=200, seed=1)
     assert summ2.iloc[0]["scope"] == "unknown"
+
+
+def test_short_record_flag_carried_from_model():
+    """The model rec's short_record flag flows into the summary row (→ pack →
+    the borehole-page 'provisional' badge); absent → False, never a crash."""
+    dates = pd.date_range("2026-06-07", periods=5, freq="D")
+    df = _members("BH1", dates, n_members=5)
+    summ, _ = S.aggregate_pastas(
+        df, {"BH1": {"sigma": 0.5, "alpha": 30.0, "short_record": True}},
+        run=pd.Timestamp("2026-06-09", tz="UTC"), n_samples=200, seed=1)
+    assert bool(summ.iloc[0]["short_record"]) is True
+    summ2, _ = S.aggregate_pastas(
+        df, {"BH1": {"sigma": 0.5, "alpha": 30.0}},
+        run=pd.Timestamp("2026-06-09", tz="UTC"), n_samples=200, seed=1)
+    assert bool(summ2.iloc[0]["short_record"]) is False
 
 
 class TestArchiveAppendDedup:

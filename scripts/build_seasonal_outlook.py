@@ -164,8 +164,11 @@ def main() -> int:
     links = (pd.read_csv(LINKS).drop_duplicates("GWStationID")
              .set_index("GWStationID") if LINKS.exists() else None)
     # Sorted for determinism — keeps --stations N probes aligned with
-    # refresh_seasonal_inputs' (also sorted) cap.
-    sids = sorted(s for s in models if s in cat.index)
+    # refresh_seasonal_inputs' (also sorted) cap. Short-record models are the
+    # 14-day fan tier ONLY: they fail the long horizon (national test 2026-07),
+    # so the seasonal outlook stays gated at the full-record bar and skips them.
+    sids = sorted(s for s in models
+                  if s in cat.index and not models[s].get("short_record"))
     if args.stations:
         sids = sids[:args.stations]
     print(f"Seasonal outlook — {len(sids)} boreholes, {months} months, "
@@ -191,6 +194,19 @@ def main() -> int:
         else:
             origin = obs_last
             seed_head = head
+        # STALENESS GATE (2026-07-09 bug): with no fan terminal, the anchor is
+        # the last OBSERVATION — which pre-freshness-fix could be months old.
+        # Seeding an ESP that far back publishes outlook months anchored in
+        # the past under a current run stamp (163/671 stations on the 2026-07
+        # run, origins back to Aug 2025). No honest seasonal exists from a
+        # stale seed: skip visibly instead. (A fan-terminal origin is ~14 days
+        # in the FUTURE — the age is negative and always passes.)
+        max_age = int(scfg.get("max_anchor_age_days", 45))
+        anchor_age = (run - origin).days
+        if anchor_age > max_age:
+            skipped.append((sid, f"anchor {origin.date()} is {anchor_age}d old "
+                                 f"(> {max_age}) — refusing a stale-seeded outlook"))
+            continue
         pet_s = load_pet(sid)
         era5 = load_station_precip(sid)
         if pet_s is None or pet_s.empty or era5.empty:

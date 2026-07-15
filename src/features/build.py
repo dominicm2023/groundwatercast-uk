@@ -25,6 +25,15 @@ from src.utils.io_encoding import force_utf8_stdio
 # Integer codes for East/West/Unknown groups — must match regional.lon_split logic
 _GROUP_CODES: dict[str, int] = {"east": 0, "west": 1, "unknown": 2}
 
+# Minimum fraction of a Weibull lag window that must be genuinely observed
+# (not calendar-filled) rainfall for the convolution to be trusted. Below this
+# bound too much of the window is a zero-guess rather than real rainfall, so
+# the result is NaN instead of a confident number built on mostly-missing
+# data. 0.95 is a strict-but-tolerant bound: on a 45-60 day kernel it absorbs
+# roughly a week of scattered/short gaps (routine logger hiccups) while still
+# rejecting a window dominated by a real outage.
+_WEIBULL_MIN_VALID_FRAC = 0.95
+
 
 # ---------------------------------------------------------------------------
 # Config
@@ -220,21 +229,75 @@ def apply_weibull_recharge(rainfall: pd.Series, kernel: np.ndarray) -> pd.Series
 
     Recharge at time t = sum_{i=1}^{lag_days} kernel[i-1] * Rainfall[t - i]
 
-    The first lag_days rows are NaN (insufficient prior history).
-    rainfall must be non-negative; NaN entries are treated as zero for the
-    convolution but propagated in the min_periods guard.
+    The first lag_days rows are NaN (insufficient prior history). rainfall
+    must be non-negative.
+
+    Bounded-tolerance NaN handling: for the lag window ending at t-1,
+    valid_frac = the fraction of that window's rainfall values that are
+    genuinely observed (non-NaN). Where valid_frac >= _WEIBULL_MIN_VALID_FRAC,
+    NaN rainfall inside the window is treated as zero and the convolution is
+    computed (a short gap inside a multi-week kernel shouldn't blank the whole
+    recharge estimate); otherwise the result is NaN — the window is too gappy
+    to trust.
+
+    valid_frac is computed on the UNSHIFTED rainfall series (then shift(1)-
+    aligned to the same window the convolution uses), not on the shifted
+    series directly: rolling+min_periods on the unshifted series correctly
+    NaNs out until a full lag_days window of real history exists (insufficient
+    prior history at the start of a record is not a "gap" and must stay
+    strict/NaN regardless of tolerance — it's what keeps this function
+    equivalent to the pre-tolerance behaviour on a gap-free record). Computing
+    valid_frac on the already-shifted series instead would erase that
+    distinction (`.notna()` never itself produces NaN, so window-size gating
+    would only see raw position availability, not content), letting the
+    single unavoidable shift(1) boundary NaN slip under the tolerance and
+    compute one row earlier than the strict pre-fix behaviour did.
 
     Returns a Series aligned to rainfall's index.
     """
     lag_days = len(kernel)
     # Shift by 1 so that the rolling window at t covers rainfall[t-lag_days..t-1]
     shifted = rainfall.shift(1)
-    result = shifted.rolling(window=lag_days, min_periods=lag_days).apply(
+    filled = shifted.fillna(0.0)
+    conv = filled.rolling(window=lag_days, min_periods=lag_days).apply(
         # x is ordered oldest→newest; reverse so x[0] = t-1, x[-1] = t-lag_days
         lambda x: float(np.dot(x[::-1], kernel)),
         raw=True,
     )
-    return result
+    valid_frac = (rainfall.notna()
+                  .rolling(window=lag_days, min_periods=lag_days).mean()
+                  .shift(1))
+    return conv.where(valid_frac >= _WEIBULL_MIN_VALID_FRAC)
+
+
+# ---------------------------------------------------------------------------
+# Calendar reindex
+# ---------------------------------------------------------------------------
+
+def reindex_to_calendar(df: pd.DataFrame) -> pd.DataFrame:
+    """Reindex a DatetimeIndex-ed frame onto the full continuous daily
+    calendar spanning [index.min(), index.max()] (inclusive), preserving tz.
+
+    ``resample_to_daily``'s dropna (and ``join_timeseries``'s "rainfall
+    required" drop) both remove days with no reading, leaving a
+    gap-collapsed, non-contiguous index. Lag/rolling/convolution features
+    computed directly on that index are POSITIONAL, not calendar-true:
+    ``shift(1)`` grabs the previous *surviving* row, which may be many
+    calendar days earlier across an outage, and a rolling window sums
+    whatever rows happen to survive rather than the calendar span it claims.
+
+    Reindexing onto the full calendar first — inserted days are NaN on every
+    column — makes every downstream shift/rolling/convolution calendar-true
+    by construction: a positionally-adjacent row is guaranteed to be exactly
+    one calendar day away, never one *surviving-observation* away.
+
+    For an already-contiguous input (no gaps) this is a no-op: the full
+    calendar equals the input index exactly.
+    """
+    if df.empty:
+        return df
+    full_idx = pd.date_range(df.index.min(), df.index.max(), freq="D", tz=df.index.tz)
+    return df.reindex(full_idx)
 
 
 # ---------------------------------------------------------------------------
@@ -261,8 +324,30 @@ def create_features(
                            Also adds region_group_code for context.
                            Unknown stations fall back to the first kernel.
 
-    Rows are dropped where any required lag/rolling column is NaN.
-    Effective minimum rows dropped = max(30 for GW_Lag30, lag_days of active kernel).
+    Calendar-true by construction: the working frame is first reindexed onto
+    the full continuous daily calendar spanning [index.min(), index.max()]
+    (``reindex_to_calendar``) before any shift/rolling/convolution runs, so a
+    lag or rolling window always spans real calendar days, never "N surviving
+    rows" across a gap. GW_Level and Rainfall are NaN on the inserted days,
+    so a lag/window touching a gap comes out NaN and is then dropped by
+    ``required_dropna`` — the training table SHRINKS at gappy stations
+    relative to positional computation (which silently mislabelled the
+    temporal distance instead). The Weibull convolution is the one
+    exception: it tolerates a mostly-observed window (see
+    ``apply_weibull_recharge``'s bounded-tolerance NaN handling), since a
+    strict all-or-nothing rule would blank a multi-week kernel's entire
+    recharge history over one short rainfall gap.
+
+    Rows are dropped where any required lag/rolling column is NaN, then the
+    frame is restricted back to the original observed row set (days with a
+    GW reading) — the output table remains "days with a reading", now with
+    calendar-true features. Effective minimum rows dropped = max(30 for
+    GW_Lag30, lag_days of active kernel), plus any additional rows lost to
+    gap-adjacent lags/windows.
+
+    For a station with a fully contiguous daily index and no NaN rainfall,
+    this is exactly equivalent (same values, same row set) to computing the
+    features directly on the input index — the calendar reindex is a no-op.
 
     Parameters
     ----------
@@ -273,6 +358,11 @@ def create_features(
     region_group        : 'east', 'west', or 'unknown' for this station.
     """
     df = df.copy()
+    observed_index = df.index
+
+    # Calendar-true grid: shift()/rolling() below must see real calendar
+    # days, not positionally-adjacent surviving rows (see reindex_to_calendar).
+    df = reindex_to_calendar(df)
 
     dates = df.index.tz_convert("UTC").normalize()
 
@@ -280,9 +370,9 @@ def create_features(
     df["GW_Lag7"]  = df["GW_Level"].shift(7)
     df["GW_Lag30"] = df["GW_Level"].shift(30)
 
-    df["Rain_1d_sum"]  = df["Rainfall"].rolling(1).sum()
-    df["Rain_3d_sum"]  = df["Rainfall"].rolling(3).sum()
-    df["Rain_7d_sum"]  = df["Rainfall"].rolling(7).sum()
+    df["Rain_1d_sum"]  = df["Rainfall"].rolling(1, min_periods=1).sum()
+    df["Rain_3d_sum"]  = df["Rainfall"].rolling(3, min_periods=3).sum()
+    df["Rain_7d_sum"]  = df["Rainfall"].rolling(7, min_periods=7).sum()
 
     doy = dates.day_of_year.values
     df["day_of_year"] = doy
@@ -349,6 +439,12 @@ def create_features(
         required_dropna.append("Recharge_Weibull")
         # Region code kept as optional context feature
         df["region_group_code"] = _GROUP_CODES.get(region_group, 2)
+
+    # Restrict back to the original observed row set (days with a GW reading)
+    # before the final required-columns dropna. The calendar reindex only
+    # exists to make the shift/rolling/convolution windows above calendar-
+    # true; the output table's row set is still "days with a reading".
+    df = df.loc[df.index.isin(observed_index)]
 
     df = df.dropna(subset=required_dropna)
     return df

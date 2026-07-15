@@ -5,7 +5,8 @@ The live end-to-end check lives in scripts/smoke_test_ensemble.py.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -159,3 +160,130 @@ class TestEcmwfGuarded:
         with pytest.raises(ImportError) as exc:
             prov.fetch(lat=51.0, lon=-1.3, start=date(2026, 6, 7), horizon_days=2)
         assert "open_meteo" in str(exc.value)  # points to the dev fallback
+
+
+# ---------------------------------------------------------------------------
+# Cycle-cache pruning (retention) — src/forecast/ensemble/provider.py
+# ---------------------------------------------------------------------------
+
+def _make_cycle_dir(cache_root, provider_name, dirname, *, payload_bytes=1000):
+    d = cache_root / provider_name / dirname
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "payload.bin").write_bytes(b"x" * payload_bytes)
+    return d
+
+
+def _cycle_name(days_ago: float) -> str:
+    dt = datetime.now(timezone.utc) - timedelta(days=days_ago)
+    return dt.strftime("%Y%m%d%H")
+
+
+class TestPruneOldCycles:
+    def test_prunes_old_keeps_new_and_malformed(self, tmp_path):
+        prov = get_provider("open_meteo", cache_root=tmp_path)
+        old_dir = _make_cycle_dir(tmp_path, "open_meteo", _cycle_name(10),
+                                  payload_bytes=2_000_000)
+        new_dir = _make_cycle_dir(tmp_path, "open_meteo", _cycle_name(0))
+        malformed_dir = _make_cycle_dir(tmp_path, "open_meteo", "notacycle")
+        # matches the 10-digit shape but not a real date/time (month 99)
+        bad_date_dir = _make_cycle_dir(tmp_path, "open_meteo", "9999999999")
+        stray_file = tmp_path / "open_meteo" / "stray.txt"
+        stray_file.write_text("not a dir")
+
+        pruned, freed = prov.prune_old_cycles(retention_days=7)
+
+        assert pruned == 1
+        assert freed == pytest.approx(2_000_000, rel=0.01)
+        assert not old_dir.exists()
+        assert new_dir.exists()
+        assert malformed_dir.exists()
+        assert bad_date_dir.exists()
+        assert stray_file.exists()
+
+    def test_retention_zero_disables_pruning(self, tmp_path):
+        prov = get_provider("open_meteo", cache_root=tmp_path)
+        old_dir = _make_cycle_dir(tmp_path, "open_meteo", _cycle_name(100))
+
+        pruned, freed = prov.prune_old_cycles(retention_days=0)
+
+        assert (pruned, freed) == (0, 0)
+        assert old_dir.exists()
+
+    def test_retention_negative_disables_pruning(self, tmp_path):
+        prov = get_provider("open_meteo", cache_root=tmp_path)
+        old_dir = _make_cycle_dir(tmp_path, "open_meteo", _cycle_name(100))
+
+        pruned, freed = prov.prune_old_cycles(retention_days=-1)
+
+        assert (pruned, freed) == (0, 0)
+        assert old_dir.exists()
+
+    def test_boundary_exactly_retention_days_old_is_pruned(self, tmp_path):
+        prov = get_provider("open_meteo", cache_root=tmp_path)
+        boundary_dir = _make_cycle_dir(tmp_path, "open_meteo", _cycle_name(7))
+
+        pruned, _ = prov.prune_old_cycles(retention_days=7)
+
+        assert pruned == 1
+        assert not boundary_dir.exists()
+
+    def test_no_cache_dir_yet_is_a_noop(self, tmp_path):
+        prov = get_provider("open_meteo", cache_root=tmp_path)
+        pruned, freed = prov.prune_old_cycles(retention_days=7)
+        assert (pruned, freed) == (0, 0)
+
+    def test_safe_wrapper_swallows_prune_errors(self, tmp_path, monkeypatch, capsys):
+        prov = get_provider("open_meteo", cache_root=tmp_path)
+        _make_cycle_dir(tmp_path, "open_meteo", _cycle_name(30))
+
+        def _boom(_path):
+            raise OSError("disk gremlins")
+        monkeypatch.setattr("src.forecast.ensemble.provider.shutil.rmtree", _boom)
+
+        pruned, freed = prov.prune_old_cycles_safe(retention_days=7)
+
+        assert (pruned, freed) == (0, 0)          # never raises
+        out = capsys.readouterr().out
+        assert "ensemble cache prune failed" in out
+
+    def test_safe_wrapper_logs_pruned_summary(self, tmp_path, capsys):
+        prov = get_provider("open_meteo", cache_root=tmp_path)
+        _make_cycle_dir(tmp_path, "open_meteo", _cycle_name(10), payload_bytes=500_000)
+        _make_cycle_dir(tmp_path, "open_meteo", _cycle_name(0))
+
+        pruned, freed = prov.prune_old_cycles_safe(retention_days=7)
+
+        assert pruned == 1
+        out = capsys.readouterr().out
+        assert "pruned 1 ensemble cycle dir(s) older than 7 days" in out
+        assert "freed ~" in out and "MB" in out
+
+    def test_safe_wrapper_silent_when_disabled(self, tmp_path, capsys):
+        prov = get_provider("open_meteo", cache_root=tmp_path)
+        _make_cycle_dir(tmp_path, "open_meteo", _cycle_name(100))
+
+        pruned, freed = prov.prune_old_cycles_safe(retention_days=0)
+
+        assert (pruned, freed) == (0, 0)
+        assert capsys.readouterr().out == ""
+
+    def test_ecmwf_download_prunes_after_fresh_fetch(self, tmp_path, monkeypatch):
+        """ECMWFOpenDataENS._download prunes once per fresh download (not on
+        a cache hit) using its own cache_retention_days."""
+        pytest.importorskip("ecmwf.opendata")
+        from src.forecast.ensemble.ecmwf_opendata import ECMWFOpenDataENS
+
+        prov = ECMWFOpenDataENS(cache_root=tmp_path, cache_retention_days=7)
+        old_run = _cycle_name(30)
+        _make_cycle_dir(tmp_path, "ecmwf_opendata", old_run)
+
+        run_dt = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+
+        class _FakeClient:
+            def retrieve(self, **kw):
+                Path(kw["target"]).write_bytes(b"grib")
+
+        monkeypatch.setattr(prov, "_client", lambda: _FakeClient())
+        prov._download(run_dt, [0, 24])
+
+        assert not (tmp_path / "ecmwf_opendata" / old_run).exists()

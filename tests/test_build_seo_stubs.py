@@ -81,21 +81,31 @@ def test_build_smoke(tmp_path):
     bare = {"station": {"station_id": "deadbeef-0000", "name": "Empty BH",
                         "lat": 52.0, "lon": -1.0}, "observed": {"series": []}}
     (pack / "b.json").write_text(json.dumps(bare), encoding="utf-8")
+    # RiverCast gauges are explorer-only in v1: a flow detail file must get NO
+    # stub, NO browse entry and NO sitemap loc (the templates speak GW).
+    flow = {"station": {"station_id": "aaaa-flow-1", "station_type": "flow",
+                        "name": "Chalkbourne Gauge", "slug": "chalkbourne-gauge",
+                        "lat": 51.0, "lon": -1.5},
+            "observed": {"unit": "m3/s", "series": [["2026-06-29", 0.42]]}}
+    (pack / "c.json").write_text(json.dumps(flow), encoding="utf-8")
     web = tmp_path / "web"
     out = web / "b"
     store = tmp_path / "lastmod.json"
     stats = B.build(pack, out, today="2026-06-30", lastmod_store=store,
                     og_manifest=tmp_path / "no-cards.json")   # raises on self-check failure
-    assert stats["stubs"] == 2
+    assert stats["stubs"] == 2            # the flow gauge gets NO stub
     assert stats["noindex"] == 1          # the empty borehole
     assert (out / "wilgate-green" / "index.html").exists()
     assert (out / "empty-bh" / "index.html").exists()
+    assert not (out / "chalkbourne-gauge").exists()   # flow: skipped entirely
     # browse + sitemap + robots
     browse = (web / "browse" / "index.html").read_text(encoding="utf-8")
     assert "Browse boreholes" in browse and "/b/wilgate-green/" in browse
+    assert "chalkbourne-gauge" not in browse          # flow: not in browse
     sm = (web / "sitemap.xml").read_text(encoding="utf-8")
     assert "<loc>https://groundwatercast.com/b/wilgate-green/</loc>" in sm
     assert "/b/empty-bh/" not in sm       # noindex page excluded from sitemap
+    assert "chalkbourne-gauge" not in sm  # flow: not in the sitemap
     # home + about + methods + contact + explorer + browse + valley + wilgate-green
     assert stats["sitemap_urls"] == 8
     assert "<loc>https://groundwatercast.com/methods/</loc>" in sm

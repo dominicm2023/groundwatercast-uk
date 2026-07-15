@@ -34,6 +34,31 @@ Consumers should read `meta.json` first and check `schema_version` before
 parsing anything else. (The published pack schemas are one of the
 repo-versioned surfaces — see `docs/product/product_definition.md` §4.2.)
 
+## 2.1 RiverCast — two station kinds
+
+The pack publishes two kinds of station: groundwater boreholes (the original
+contract, unchanged) and flow gauges (**RiverCast**, Stage 7 of
+`docs/product/lowflow/build_plan.md`, additive throughout, no bump). A
+`station_type` property distinguishes them:
+
+- `station_type` is **absent** on every groundwater row/feature — "absent
+  means gw". A GW row's property set is byte-identical to before RiverCast
+  shipped; nothing about the borehole contract changed.
+- `station_type: "flow"` is present on every flow row/feature.
+
+**v1 launch scope**: only the ~50-gauge southern-chalk pilot publishes —
+gauges that passed their own ENS-driven admission gate
+(`src/forecast/pastas/flow_gate.py`). A flow station appears **only** once it
+has a published fan; there is no flow analogue of the GW "status-only,
+outside forecast scope" tier in v1 (every published flow station has
+`forecast != null`).
+
+Flow data is **gauged flow — including any abstraction and discharge
+effects** — and Q95 thresholds are climatological proxies (`q95_proxy`), not
+licence Hands-off-Flow values; rating curves (the stage→flow conversion) are
+least accurate at low flows. These caveats are carried in `meta.river_disclaimer`
+and repeated in the explorer's trust card.
+
 ## 3. File inventory
 
 | File | Purpose |
@@ -75,13 +100,14 @@ stations are skipped and counted in `meta.counts.no_data`.
 | `schema_version` | string | no | This contract's version (`"1.0"`) |
 | `generated_at` | timestamp | no | When the pack was built (UTC) |
 | `region` | string | no | `config.region.name` |
-| `counts` | object | no | `stations` (published), `with_forecast`, `with_seasonal`, `excluded`, `no_data` |
+| `counts` | object | no | `stations` (published), `with_forecast`, `with_seasonal`, `excluded`, `no_data`, `flow_gauges` (published RiverCast gauges), `flow_with_forecast` (of those, with a published fan — normally equal to `flow_gauges`, since v1 only publishes gated gauges) |
 | `coverage` | object | no | Network-coverage audit: `catalogued`, `observed`, `with_forecast`, `no_data`, `excluded`, `live_capable` (network count with an EA live feed; `null` if unknown). For honest "how much of the network is this?" disclosure. |
 | `runs.forecast` | timestamp | yes | The forecast run this pack carries; `null` if the forecast input was missing |
 | `runs.seasonal` | object | yes | `{run, origin_date}` of the seasonal outlook; `null` if missing |
 | `inputs.<name>` | object | no | Per-input provenance: `{path, mtime_utc, status}` with `status` ∈ `ok` \| `missing` |
-| `attribution` | string | no | Data licence attribution (EA OGL v3, ECMWF CC-BY-4.0) |
+| `attribution` | string | no | Data licence attribution (EA OGL v3, ECMWF CC-BY-4.0) — already covers RiverCast flow data (same EA/OGL v3 licence family) |
 | `disclaimer` | string | no | "Not flood warnings" wording — display wherever pack data is shown |
+| `river_disclaimer` | string | no | RiverCast-specific caveat line: gauged flow (abstraction/discharge effects), rating-curve accuracy at low flow, Q95-proxy semantics. Additive 2026-07 — always present, regardless of `counts.flow_gauges` |
 | `history_days` | int | no | Observed-history depth in the detail files |
 
 ### 5.2 `manifest.json`
@@ -122,17 +148,30 @@ For MapLibre feature-state, load with `promoteId: "station_id"`.
 | `threshold` | number | yes | Breach level (mAOD) |
 | `threshold_source` | string | yes | `user` \| `gw_p90_proxy` \| `none` — proxy values are NOT operational thresholds |
 | `is_pinned` | bool | no | Station has a user-supplied threshold (`false` out of scope) |
+| `short_record` | bool | no | Fan is from the **short-record tier** (< ~5.5 yr of record, admitted by a leakage-safe hindcast gate): 14-day fan only, wider bands, no seasonal outlook. `false` for full-record and out of scope |
 | `has_forecast` | bool | no | Convenience filter flag |
 | `has_seasonal` | bool | no | Convenience filter flag |
 | `has_trend_flag` | bool | no | Station is in the trend screen's review queue (roadmap 1.1) |
 | `trend_severity` | string | yes | Flag severity `high` \| `medium` \| `low`; `null` when unflagged |
 | `st_seq` | string[] | no | Forecast-timeline category per frame (`below` \| `near` \| `above` \| `none`); frame order is `meta.forecast_frames`. Frame 0 is the current status, or a faint nowcast estimate when the latest reading is stale |
 | `op_seq` | number[] | no | Forecast-timeline opacity per frame (0–1): confidence × lead-time fade, for the map scrubber |
+| `station_type` | string | **absent for GW** | `"flow"` on a RiverCast gauge; the key does not exist on a groundwater feature at all (not `null` — genuinely absent, so a GW feature's property set is unchanged) |
+
+**RiverCast (flow) feature properties** — a flow feature carries `station_type: "flow"`
+plus a deliberately smaller set: `station_id`, `slug`, `name` (`GEOJSON_IDENTITY_PROPS`
+minus `aquifer`/`aquifer_designation`, not applicable), `status`, `percentile`, `trend`,
+`level`, `obs_date`, `obs_age_days`, `sgi` (`GEOJSON_STATUS_PROPS`, computed the same
+way against the gauge's own monthly flow climatology), `freshness`, `days_since`,
+`data_source` (`GEOJSON_FRESHNESS_PROPS`), `has_forecast` (always `true` in v1 — see
+§2.1), `river_name`, `rain_dependent`. No `tier`/`p_breach_14d`/`threshold`/`st_seq`/
+`op_seq`/aquifer fields, no seasonal/trend-flag flags — those are GW-specific
+vocabulary or not yet published for rivers (seasonal is Stage 6b shadow-only).
 
 ### 5.4 `stations/<station_id>.json`
 
 Top level: `schema_version`, `station`, `status`, `freshness`, `normals`,
-`observed`, `forecast` (nullable), `seasonal` (nullable), `trend_flag` (nullable).
+`observed`, `forecast` (nullable), `seasonal` (nullable), `trend_flag` (nullable),
+`verification` (nullable).
 
 - **`station`**: `station_id`, `slug` (same semantics as the geojson `slug`),
   `name`, `lat`, `lon`, `aquifer`, `aquifer_designation`.
@@ -165,7 +204,10 @@ Top level: `schema_version`, `station`, `status`, `freshness`, `normals`,
     gap (observed rainfall; negative `lead`; `roll_p50`/`model_spread` null) or
     `"forecast"` for the 46-day horizon from today. Leads beyond 15 are ECMWF
     extended-range (EC46) — daily skill is weak there; the envelope is the signal.
-- **`seasonal`** (`null` when absent): `run`, `origin_date`,
+- **`seasonal`** (`null` when absent — including when the outlook's anchor is
+  older than ~60 days at pack-build time, or every outlook month is already
+  over: a stale outlook publishes as null, never as current-looking data):
+  `run`, `origin_date`,
   `seas5_weighted` (bool), `n_traces`, and `months` — up to 6 rows with keys
   `month_ahead`, `month_start`, `p_below`, `p_near`, `p_above`, `gw_p10`,
   `gw_p50`, `gw_p90` (tercile probabilities vs the station's own monthly
@@ -179,6 +221,60 @@ Top level: `schema_version`, `station`, `status`, `freshness`, `normals`,
   rainfall anomaly — low ⇒ artefact-like), `isolation_class`
   (`isolated` \| `regional` \| `no_neighbours`), `neighbour_count`, and
   `already_in_register`. Surfaced as a "flagged for review" badge, not "broken".
+- **`verification`** (`null` when no archived forecast window has both closed
+  AND accrued ≥ 8 observed days — young archive, stale sensor, or no forecast):
+  "how did the last forecast do?" — the most recent **archived** forecast whose
+  full window has closed, scored against what was then observed and published
+  as-is, good or bad. Keys: `run` (the archived run's timestamp), `origin_date`,
+  `horizon_days`, `n_obs` (observed days scored), `n_in_band` (of those, how
+  many fell inside the published P10–P90 — nominal expectation ≈ 80%),
+  `mae_p50` (mean |observed − P50|, m), and `fan` — the archived per-lead rows
+  (`lead`, `date`, `p10`, `p50`, `p90`) so the chart can overlay them on the
+  observed series. Values are what was published at the time (never re-run with
+  today's models).
+
+### 5.4a `stations/<station_id>.json` — RiverCast (flow) gauges
+
+Same envelope/top-level keys as §5.4 (`schema_version`, `station`, `status`,
+`freshness`, `normals`, `observed`, `forecast`, `seasonal`, `trend_flag`,
+`verification`); several take different shapes for a flow gauge:
+
+- **`station`** gains `station_type: "flow"`, `river_name` (nullable — not
+  every EA gauge has one), `linked_boreholes` (array of `station_id`, possibly
+  empty — the groundwater boreholes whose `station_links.csv` row's
+  `RiverFlowMeasureID` names this gauge; a read-only inversion, never derived
+  the other way), `winterbourne` (bool — the gauge's record has zero-flow
+  days), `dry_months` (int[] 1–12, empty unless `winterbourne` — the calendar
+  months where zero/near-zero flow is common in this gauge's own climatology).
+  No `aquifer`/`aquifer_designation` (not applicable).
+- **`status`**/**`freshness`**/**`normals`** — identical shape to GW, computed
+  the same way (`status_from_series` / the GW monthly-normals routine) against
+  the gauge's own daily flow record instead of a GW shard.
+- **`observed`**: `{"unit": "m3/s", "series": [[date, value]]}`.
+- **`forecast`** (`null` only when the gauge has no published fan — which
+  should not happen for a published v1 flow station, see §2.1): `run`,
+  `origin_date`, `stale_days`, `horizon_days`, `threshold` (the gauge's Q95,
+  m3/s), `threshold_source` (`"q95_proxy"`), `p_below_q95` (full horizon),
+  **`p_below_q95_14d`** (the headline probability — a NEW field, never
+  overloading GW's `p_breach_14d`: opposite direction, different semantics),
+  `first_cross_median`, `first_cross_p25`, `first_cross_p75`,
+  `first_cross_median_lead`, `censored_frac`, `q_p50_end` (median flow at
+  the horizon, m3/s), `n_members`, `n_samples`, `headline`, **`rain_dependent`**
+  (bool — the Stage-4 admission gate's tier flag: `false` for a tier-1 gauge
+  that stays skilful on climatological rain alone, `true` for a gauge whose
+  skill leans on the rain forecast; pilot v1 is all tier-1, so this is `false`
+  everywhere at launch, but the field ships now), and:
+  - **`fan`**: per-lead rows with keys `lead`, `date`, `p10`, `p50`, `p90`,
+    `segment` (`"forecast"` \| `"nowcast"`, same semantics as GW). No
+    `roll_p50`/`model_spread` — flow has no reduced-form cross-check model.
+- **`seasonal`**: always `null` in v1 (Stage 6b's flow seasonal outlook is an
+  internal shadow archive with zero public exposure by design — see the build
+  plan; nothing is withheld from a "ready" outlook, there simply isn't one yet).
+- **`trend_flag`**: always `null` in v1 (no trend screen runs over flow gauges).
+- **`verification`**: always `null` in v1 (the flow forecast archive only
+  started with the pilot; no window has both closed and accrued enough
+  observed days yet — wiring is deferred to when it does, same null-until-ready
+  semantics as GW's `MIN_VERIFY_OBS` gate).
 
 ## 6. Degradation semantics
 
@@ -192,6 +288,7 @@ degrade per-field, and `meta.inputs.<name>.status = "missing"` records why:
 | `normals` | `normals` empty; `status.status`/`percentile` `null` (level/trend still present) |
 | `freshness` | freshness fields `null` |
 | catalogue or shards | **build fails** (a pack without stations is meaningless) |
+| `flow_catalogue` / `forecast_flow_summary` / `forecast_flow_fan` | **zero flow stations** — the pack builds exactly as it does today, no `station_type: "flow"` feature or detail file anywhere, `counts.flow_gauges = 0`. RiverCast is a purely additive subsystem: a host with no flow data configured (or not yet caught up) must still deploy a working GW-only pack |
 
 Consumers must treat every nullable field as genuinely null-able — a missing
 forecast is normal (most stations are status-only), not an error.
@@ -243,3 +340,4 @@ Status-only station detail (abridged):
 | `1.0` | 2026-06-20 | Additive (no bump): `st_seq` / `op_seq` geojson props + `meta.forecast_frames` / `meta.forecast_frame_days` — forecast-timeline scrubber (recolour the map through Today → +2 wk → Months 1–6; slider spaced by real elapsed time) |
 | `1.0` | 2026-07-01 | Additive (no bump): `slug` on geojson props + `detail.station` — the canonical `/b/<slug>/` page path, assigned once at pack build so duplicate-named stations can never link to the wrong page |
 | `1.0` | 2026-07-04 | Additive (no bump): `stations/index.json` (lightweight catalogue) + `national_history.json` (daily national below/near/above counts). `meta.forecast_frame_days` seasonal offsets now use the run's REAL `month_start` mid-points (was a 30·mi approximation that placed "Month 1" ~a month earlier than its valid period) — a semantic accuracy fix within the documented "approximate spacing" contract. |
+| `1.0` | 2026-07-14 | Additive (no bump): **RiverCast** — flow gauges as a second station kind (§2.1, §5.4a). `station_type: "flow"` on `stations.geojson` features and `stations/index.json` rows (absent on every GW row); flow features carry `river_name`/`rain_dependent` in place of the GW forecast-tier props; flow detail JSON gains `station.river_name`/`linked_boreholes`/`winterbourne`/`dry_months` and a flow-shaped `forecast` block (`observed.unit: "m3/s"`, `p_below_q95`/`p_below_q95_14d`, `threshold_source: "q95_proxy"`, `rain_dependent`, no `roll_p50`/`model_spread` in `fan`). `meta.counts` gains `flow_gauges`/`flow_with_forecast`; `meta.river_disclaimer` added. v1 publishes only the gated southern-chalk pilot (~50 gauges); with no flow inputs present the pack builds unchanged (zero flow stations). |

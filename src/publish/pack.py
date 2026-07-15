@@ -34,6 +34,8 @@ import pandas as pd
 
 from src.publish.contract import (
     FAN_KEY_MAP,
+    FLOW_FAN_KEY_MAP,
+    FLOW_SUMMARY_COL_SOURCES,
     LEVEL_DP,
     NORMALS_ROW_KEYS,
     PCT_DP,
@@ -45,6 +47,7 @@ from src.publish.contract import (
 )
 from src.dashboard.status import status_from_series
 from src.forecast.live_levels import LIVE_STUCK_SOURCE
+from src.forecast.seasonal.normals import NORMALS_COLS, gw_monthly_normals
 
 ATTRIBUTION = ("Contains Environment Agency data licensed under the Open "
                "Government Licence v3.0. Forecast forcing from ECMWF Open "
@@ -56,6 +59,23 @@ DISCLAIMER = ("Indicative, uncalibrated research forecast built on open "
               "data. Not flood warnings; not for safety-critical use. See "
               "the official Environment Agency flood warning service for "
               "operational decisions.")
+# RiverCast (Stage 7) — always present in meta once any flow input exists or
+# not: a static caveat line, like ATTRIBUTION/DISCLAIMER above, so a consumer
+# never has to null-check it. Required wording (build_plan.md honesty
+# invariants): gauged flow / abstraction+discharge effects, rating-curve
+# weakness at low flow, Q95-as-proxy (not a licence Hands-off-Flow value).
+RIVER_DISCLAIMER = (
+    "RiverCast flow data is gauged flow, including any abstraction and "
+    "discharge effects, from Environment Agency hydrology stations (Open "
+    "Government Licence v3.0). Rating curves — the stage-to-flow "
+    "conversion — are least accurate at low flows. Q95 thresholds are "
+    "climatological proxies (q95_proxy), not licence Hands-off-Flow values. "
+    "Indicative and experimental; not for operational or safety-critical use."
+)
+# Mirrors src.download.flow's shard data_source marker (that module's
+# constant is private; flow shards carry no live/dipped distinction to
+# encode, so every row is this one value).
+FLOW_DATA_SOURCE = "flow_logged"
 
 
 # ---------------------------------------------------------------------------
@@ -72,6 +92,7 @@ class PackInputs:
     normals: pd.DataFrame | None = None
     pastas_summary: pd.DataFrame | None = None
     pastas_fan: pd.DataFrame | None = None
+    pastas_fan_archive: pd.DataFrame | None = None   # verification trail (parquet)
     seasonal: pd.DataFrame | None = None
     trend_flags: pd.DataFrame | None = None
     excluded_ids: frozenset[str] = frozenset()
@@ -80,6 +101,14 @@ class PackInputs:
     region_name: str = ""
     source_meta: dict = field(default_factory=dict)
     geology_path: Path | None = None         # optional aquifer GeoJSON to ship
+    # RiverCast (Stage 7) — all optional; absent/empty ⇒ zero flow stations,
+    # the pack builds exactly as it does today (see docs/artifact_contract.md §6).
+    flow_catalogue: pd.DataFrame | None = None
+    flow_shard_dir: Path | None = None
+    flow_summary: pd.DataFrame | None = None       # forecast_flow_summary.csv
+    flow_fan: pd.DataFrame | None = None           # forecast_flow_fan.csv
+    flow_gate: pd.DataFrame | None = None          # flow_fleet_scan.csv (rain_dependent)
+    station_links: pd.DataFrame | None = None      # GW<->river inversion (RiverFlowMeasureID)
 
 
 def _source_entry(path: Path, root: Path | None = None, *,
@@ -115,6 +144,23 @@ def load_inputs(cfg: dict, root: Path) -> PackInputs:
         root / "data/model/forecast_pastas_summary.csv", root)
     fan, meta["pastas_fan"] = _source_entry(
         root / "data/model/forecast_pastas_fan.csv", root)
+    # Verification trail: every archived fan (parquet, appended per daily run).
+    # Optional — a fresh install has no archive yet; verification degrades to null.
+    fan_archive = None
+    fa_path = root / "data/model/forecast_pastas_fan_archive.parquet"
+    if fa_path.exists():
+        mtime = datetime.fromtimestamp(fa_path.stat().st_mtime, tz=timezone.utc)
+        meta["pastas_fan_archive"] = {
+            "path": fa_path.relative_to(root).as_posix(),
+            "mtime_utc": mtime.strftime("%Y-%m-%dT%H:%M:%SZ"), "status": "ok"}
+        try:
+            fan_archive = pd.read_parquet(fa_path)
+        except Exception:
+            meta["pastas_fan_archive"]["status"] = "unreadable"
+    else:
+        meta["pastas_fan_archive"] = {
+            "path": "data/model/forecast_pastas_fan_archive.parquet",
+            "mtime_utc": None, "status": "missing"}
     seasonal, meta["seasonal"] = _source_entry(
         root / "data/model/forecast_seasonal_summary.csv", root)
     trend_flags, meta["trend_flags"] = _source_entry(
@@ -141,15 +187,37 @@ def load_inputs(cfg: dict, root: Path) -> PackInputs:
         meta["geology"] = {"path": "data/geology/bedrock_625k.geojson",
                            "mtime_utc": None, "status": "missing"}
 
+    # RiverCast (Stage 7) — every input here is OPTIONAL (graceful: a host
+    # with no flow subsystem configured yet still builds a working GW-only
+    # pack, see docs/artifact_contract.md §6). Provenance is tracked the same
+    # way as every other optional input, under meta.inputs.<name>.
+    flow_catalogue, meta["flow_catalogue"] = _source_entry(
+        root / "data/processed/flow_catalogue.csv", root)
+    flow_summary, meta["forecast_flow_summary"] = _source_entry(
+        root / "data/model/forecast_flow_summary.csv", root)
+    flow_fan, meta["forecast_flow_fan"] = _source_entry(
+        root / "data/model/forecast_flow_fan.csv", root)
+    flow_gate, meta["flow_fleet_scan"] = _source_entry(
+        root / "outputs/flow_fleet_scan.csv", root)
+    station_links, meta["station_links"] = _source_entry(
+        root / "data/processed/station_links.csv", root)
+    flow_shard_dir = root / "data/features/flow_by_station"
+    if not flow_shard_dir.exists() or not any(flow_shard_dir.glob("*.parquet")):
+        flow_shard_dir = None
+
     return PackInputs(
         catalogue=catalogue, shard_dir=shard_dir, freshness=freshness,
         normals=normals, pastas_summary=summary, pastas_fan=fan,
+        pastas_fan_archive=fan_archive,
         seasonal=seasonal, trend_flags=trend_flags,
         excluded_ids=frozenset(excluded_station_ids()),
         pinned_ids=frozenset(user_threshold_station_ids()),
         live_capable=len(live_capable_ids()),
         region_name=cfg.get("region", {}).get("name", ""),
-        source_meta=meta, geology_path=geology)
+        source_meta=meta, geology_path=geology,
+        flow_catalogue=flow_catalogue, flow_shard_dir=flow_shard_dir,
+        flow_summary=flow_summary, flow_fan=flow_fan, flow_gate=flow_gate,
+        station_links=station_links)
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +315,101 @@ def _read_shard(shard_dir: Path, sid: str) -> pd.Series:
     return s.sort_index()
 
 
+def _read_flow_shard(shard_dir: Path, gid: str) -> pd.Series:
+    """Mirrors ``_read_shard`` for a flow gauge (``src.download.flow``'s
+    ``Flow_m3s`` shard column). No stuck-telemetry filtering — flow shards
+    carry no live-overlay concept the way GW does (module docstring of
+    ``scripts/build_flow_members.py``)."""
+    fp = shard_dir / f"{gid}.parquet"
+    if not fp.exists():
+        return pd.Series(dtype="float64", name="Flow_m3s")
+    df = pd.read_parquet(fp, columns=["date", "Flow_m3s"])
+    idx = pd.DatetimeIndex(pd.to_datetime(df["date"]))
+    if idx.tz is not None:
+        idx = idx.tz_localize(None)
+    s = pd.Series(df["Flow_m3s"].to_numpy(float), index=idx.normalize(),
+                  name="Flow_m3s").dropna()
+    return s.sort_index()
+
+
+# ---------------------------------------------------------------------------
+# RiverCast (flow) helpers — Stage 7 of docs/product/lowflow/build_plan.md.
+# Deliberately thin: status/normals reuse the GW routines UNCHANGED (generic
+# over the value column — "reuse the GW normals approach" per the build plan),
+# so a flow gauge is just another (series, station_id, normals) triple to them.
+# ---------------------------------------------------------------------------
+
+def _flow_monthly_normals(series: pd.Series, gid: str) -> pd.DataFrame:
+    """Monthly flow climatology ladder for one gauge, via the exact GW
+    routine (``gw_monthly_normals``) fed a same-shaped frame — no fork."""
+    if series is None or series.empty:
+        return pd.DataFrame(columns=NORMALS_COLS)
+    joined = pd.DataFrame({"dateTime": series.index, "station_id": gid,
+                           "GW_Level": series.to_numpy(float)})
+    return gw_monthly_normals(joined)
+
+
+def _flow_freshness_block(series: pd.Series | None, now: pd.Timestamp) -> dict:
+    """Flow has no separate freshness-audit CSV (unlike GW's
+    ``gw_freshness.csv``) — derive directly from the shard tail. Thresholds
+    are a presentation convention (not a modelled quantity), chosen to read
+    naturally against a daily-mean EA flow feed."""
+    if series is None or series.empty:
+        return {"label": None, "days_since": None,
+                "last_real_reading": None, "data_source": None}
+    last = pd.Timestamp(series.index.max())
+    days = int((now.normalize() - last.normalize()).days)
+    label = ("fresh" if days <= 2 else "recent" if days <= 7
+             else "stale" if days <= 30 else "very_stale")
+    return {"label": label, "days_since": jint(days),
+            "last_real_reading": iso_date(last), "data_source": FLOW_DATA_SOURCE}
+
+
+def _winterbourne_info(series: pd.Series | None,
+                       zero_eps: float = 1e-4,
+                       month_frac: float = 0.05) -> tuple[bool, list[int]]:
+    """``(winterbourne, dry_months)`` from a gauge's own record: ``winterbourne``
+    is true wherever the record has ANY zero-flow day (build_plan.md's literal
+    trigger); ``dry_months`` are the calendar months where a zero/near-zero
+    reading is common (>= ``month_frac`` of that month's observations across
+    the whole record) — the "typically dry <months>" climatology read. Pure
+    presentation of data already in the shard; no new model claim."""
+    if series is None or series.empty:
+        return False, []
+    s = series.dropna()
+    zero = s <= zero_eps
+    if not bool(zero.any()):
+        return False, []
+    months = s.index.month
+    dry = [m for m in range(1, 13)
+          if (sel := zero[months == m]).size and float(sel.mean()) >= month_frac]
+    return True, dry
+
+
+def _linked_boreholes_map(links: pd.DataFrame | None) -> dict[str, list[str]]:
+    """Invert ``station_links.csv``'s existing GW->river mapping
+    (``RiverFlowMeasureID``) into gauge -> [borehole station_id, ...] — READ
+    ONLY, station_links.csv itself is never modified. ``RiverFlowMeasureID``
+    uses the EA *instantaneous* measure suffix (``-flow-i-900-m3s-qualified``)
+    while the flow catalogue's own id uses the *daily-mean* suffix
+    (``-flow-m-86400-m3s-qualified``); both share the same leading gauge GUID,
+    so matching splits on the common ``-flow-`` separator rather than comparing
+    the full measure id."""
+    out: dict[str, list[str]] = {}
+    if links is None or links.empty or "RiverFlowMeasureID" not in links.columns:
+        return out
+    for _, r in links.iterrows():
+        rid = r.get("RiverFlowMeasureID")
+        if rid is None or (isinstance(rid, float) and pd.isna(rid)):
+            continue
+        gauge_sid = str(rid).split("-flow-")[0]
+        bh_sid = r.get("GWStationID")
+        if bh_sid is None or (isinstance(bh_sid, float) and pd.isna(bh_sid)):
+            continue
+        out.setdefault(gauge_sid, []).append(str(bh_sid))
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Block builders (pure)
 # ---------------------------------------------------------------------------
@@ -275,6 +438,59 @@ def _freshness_block(row: pd.Series | None) -> dict:
     }
 
 
+# Verification needs this many OBSERVED days inside a closed window before we
+# score it — a couple of stray readings can't honestly grade a 14-day fan.
+MIN_VERIFY_OBS = 8
+
+
+def _verification_block(vdf: pd.DataFrame | None, series: pd.Series | None,
+                        now_naive: pd.Timestamp) -> dict | None:
+    """'How did the last forecast do?' — the most recent ARCHIVED fan whose
+    whole window has closed and which has >= MIN_VERIFY_OBS observed days,
+    scored against those observations. None when the archive/observations
+    can't support an honest comparison (young archive, stale sensor, no
+    forecast). The credibility block: published as-is, good or bad.
+
+    ``vdf``: this station's archived FORECAST-segment fan rows (all runs).
+    ``series``: the station's observed daily series (tz-naive date index).
+    """
+    if vdf is None or vdf.empty or series is None or series.empty:
+        return None
+    # Most recent run first; stop at the first scoreable closed window.
+    for run in sorted(vdf["run"].unique())[::-1]:
+        g = vdf[vdf["run"] == run].sort_values("lead")
+        dates = pd.DatetimeIndex(pd.to_datetime(g["date"]))
+        if dates.tz is not None:
+            dates = dates.tz_localize(None)
+        if dates.max() >= now_naive.normalize():
+            continue                                   # window not closed yet
+        obs = series.reindex(dates)
+        valid = obs.notna().to_numpy()
+        n_obs = int(valid.sum())
+        if n_obs < MIN_VERIFY_OBS:
+            continue                                   # too few obs to grade
+        o = obs.to_numpy(float)[valid]
+        p10 = g["gw_p10"].to_numpy(float)[valid]
+        p50 = g["gw_p50"].to_numpy(float)[valid]
+        p90 = g["gw_p90"].to_numpy(float)[valid]
+        n_in = int(((o >= p10) & (o <= p90)).sum())
+        mae = float(abs(o - p50).mean())
+        return {
+            "run": iso_utc(run),
+            "origin_date": iso_date(dates.min() - pd.Timedelta(days=1)),
+            "horizon_days": int(len(g)),
+            "n_obs": n_obs,
+            "n_in_band": n_in,
+            "mae_p50": jround(mae, 3),
+            "fan": [{"lead": jint(r["lead"]), "date": iso_date(r["date"]),
+                     "p10": jround(r["gw_p10"], LEVEL_DP),
+                     "p50": jround(r["gw_p50"], LEVEL_DP),
+                     "p90": jround(r["gw_p90"], LEVEL_DP)}
+                    for _, r in g.iterrows()],
+        }
+    return None
+
+
 def _forecast_block(srow: pd.Series, fan: pd.DataFrame | None) -> dict:
     out: dict = {}
     for key, col in SUMMARY_COL_SOURCES.items():
@@ -296,6 +512,10 @@ def _forecast_block(srow: pd.Series, fan: pd.DataFrame | None) -> dict:
             out[key] = _str_or_none(val)
     out["tier"] = _str_or_none(srow.get("tier"))
     out["is_pinned"] = jbool(srow.get("is_pinned", False))
+    # Short-record fan tier (< MIN_ROWS obs, admitted by the hindcast gate):
+    # the fan is real but provisional (wider bands, no seasonal) — the borehole
+    # page badges it so the shorter record is never mistaken for a mature one.
+    out["short_record"] = jbool(srow.get("short_record", False))
 
     rows = []
     if fan is not None and not fan.empty:
@@ -312,11 +532,132 @@ def _forecast_block(srow: pd.Series, fan: pd.DataFrame | None) -> dict:
     return out
 
 
-def _seasonal_block(srows: pd.DataFrame) -> dict | None:
+def _flow_forecast_block(srow: pd.Series, fan: pd.DataFrame | None,
+                         rain_dependent: bool) -> dict:
+    """Flow analogue of ``_forecast_block`` — same lift-and-round pattern,
+    driven by FLOW_SUMMARY_COL_SOURCES/FLOW_FAN_KEY_MAP instead of the GW
+    constants, plus ``rain_dependent`` (the Stage-4 gate's tier flag, not a
+    summary column, so it isn't in the source-column mapping)."""
+    out: dict = {}
+    for key, col in FLOW_SUMMARY_COL_SOURCES.items():
+        val = srow.get(col)
+        if key == "run":
+            out[key] = iso_utc(val)
+        elif key in ("origin_date", "first_cross_median",
+                     "first_cross_p25", "first_cross_p75"):
+            out[key] = iso_date(val)
+        elif key in ("threshold", "q_p50_end"):
+            out[key] = jround(val, LEVEL_DP)
+        elif key in ("p_below_q95", "p_below_q95_14d", "censored_frac"):
+            out[key] = jround(val, PROB_DP)
+        elif key in ("stale_days", "horizon_days", "first_cross_median_lead",
+                     "n_members", "n_samples"):
+            out[key] = jint(val)
+        else:                                   # threshold_source, headline
+            out[key] = _str_or_none(val)
+    out["rain_dependent"] = jbool(rain_dependent)
+
+    rows = []
+    if fan is not None and not fan.empty:
+        for _, r in fan.sort_values("lead").iterrows():
+            entry = {"lead": jint(r["lead"]), "date": iso_date(r["date"]),
+                     "segment": _str_or_none(r.get("segment")) or "forecast"}
+            for src, dst in FLOW_FAN_KEY_MAP.items():
+                entry[dst] = jround(r.get(src), LEVEL_DP)
+            rows.append(entry)
+    out["fan"] = rows
+    return out
+
+
+def flow_station_feature(cat_row: pd.Series, status: dict, fresh: dict,
+                         rain_dependent: bool, slug: str) -> dict:
+    """One GeoJSON Feature for a RiverCast gauge — a deliberately SMALLER,
+    distinct property set from a GW feature (docs/artifact_contract.md §5.3):
+    no aquifer/tier/threshold/timeline props (GW-specific vocabulary), and
+    ``station_type: "flow"`` is the only key a GW feature never carries."""
+    props = {
+        "station_id": str(cat_row["station_id"]),
+        "slug": slug,
+        "name": _str_or_none(cat_row.get("station_name")),
+        "station_type": "flow",
+        **status,
+        "freshness": fresh["label"],
+        "days_since": fresh["days_since"],
+        "data_source": fresh["data_source"],
+        "has_forecast": True,          # v1: only gated, fan-carrying gauges publish
+        "river_name": _str_or_none(cat_row.get("river_name")),
+        "rain_dependent": jbool(rain_dependent),
+    }
+    return {
+        "type": "Feature",
+        "geometry": {"type": "Point",
+                     "coordinates": [jround(cat_row["lon"], 6),
+                                     jround(cat_row["lat"], 6)]},
+        "properties": props,
+    }
+
+
+def flow_station_detail(cat_row: pd.Series, status: dict, fresh: dict,
+                        normals_rows: list[dict], observed: list,
+                        fcst: dict, status_month: int | None, slug: str,
+                        linked_boreholes: list[str], winterbourne: bool,
+                        dry_months: list[int]) -> dict:
+    """Same top-level envelope as ``station_detail`` (docs/artifact_contract.md
+    §5.4a): seasonal/trend_flag/verification are always null in v1 (no public
+    flow seasonal — Stage 6b is shadow-only; no trend screen; no closed
+    verification window yet)."""
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "station": {
+            "station_id": str(cat_row["station_id"]),
+            "slug": slug,
+            "name": _str_or_none(cat_row.get("station_name")),
+            "lat": jround(cat_row["lat"], 6),
+            "lon": jround(cat_row["lon"], 6),
+            "station_type": "flow",
+            "river_name": _str_or_none(cat_row.get("river_name")),
+            "linked_boreholes": linked_boreholes,
+            "winterbourne": jbool(winterbourne),
+            "dry_months": [jint(m) for m in dry_months],
+        },
+        "status": {**status, "month": status_month},
+        "freshness": fresh,
+        "normals": normals_rows,
+        "observed": {"unit": "m3/s", "series": observed},
+        "forecast": fcst,
+        "seasonal": None,
+        "trend_flag": None,
+        "verification": None,
+    }
+
+
+# A seasonal outlook whose anchor is this much older than the pack build is
+# stale — refuse to publish it (the 2026-07-09 bug: outlooks seeded at
+# months-old observations, served under a current run stamp). Anchors ~14 days
+# in the FUTURE are normal: the ESP is anchored at the 14-day fan terminal.
+SEASONAL_MAX_ANCHOR_AGE_D = 60
+
+
+def _seasonal_block(srows: pd.DataFrame,
+                    now: pd.Timestamp | None = None) -> dict | None:
     if srows is None or srows.empty:
         return None
     srows = srows.sort_values("month_ahead")
     first = srows.iloc[0]
+    if now is not None:
+        # stale anchor → no outlook (an honest null beats a months-old tercile)
+        try:
+            age_d = (now.normalize() - pd.Timestamp(first["origin_date"])).days
+        except (TypeError, ValueError):
+            age_d = None
+        if age_d is not None and age_d > SEASONAL_MAX_ANCHOR_AGE_D:
+            return None
+        # drop months already over (the month in progress stays) — an outlook
+        # for the past is not an outlook
+        month0 = now.normalize().replace(day=1)
+        srows = srows[pd.to_datetime(srows["month_start"]) >= month0]
+        if srows.empty:
+            return None
     months = []
     for _, r in srows.iterrows():
         months.append({
@@ -391,6 +732,17 @@ _OP_MIN, _OP_MAX = 0.18, 0.9
 _OP_OBSERVED, _OP_ESTIMATED, _OP_NO_DATA = 0.92, 0.45, 0.55
 
 
+def _dominant_origin(df: pd.DataFrame):
+    """The modal origin_date — the run's fleet-uniform anchor. Under mixed
+    origins (an archive carrying stale per-borehole seeds) any single-row
+    pick is arbitrary; the mode is the cohort the run actually produced.
+    None when the column is absent or all-NaN."""
+    if "origin_date" not in df.columns or not df["origin_date"].notna().any():
+        return None
+    mode = df["origin_date"].mode()
+    return mode.iloc[0] if len(mode) else None
+
+
 def _seasonal_month_starts(seasonal_all: pd.DataFrame | None) -> list:
     """The run's seasonal month_start per month_ahead (1..N), for real-days
     frame spacing. Restricted to the DOMINANT origin_date cohort: an archive
@@ -403,10 +755,9 @@ def _seasonal_month_starts(seasonal_all: pd.DataFrame | None) -> list:
     df = seasonal_all.dropna(subset=["month_start"])
     if df.empty:
         return []
-    if "origin_date" in df.columns and df["origin_date"].notna().any():
-        dominant = df["origin_date"].mode()
-        if len(dominant):
-            df = df[df["origin_date"] == dominant.iloc[0]]
+    dominant = _dominant_origin(df)
+    if dominant is not None:
+        df = df[df["origin_date"] == dominant]
     firsts = df.drop_duplicates("month_ahead").sort_values("month_ahead")
     return list(firsts["month_start"])
 
@@ -562,6 +913,7 @@ def station_feature(cat_row: pd.Series, status: dict, fresh: dict,
         "threshold": fcst["threshold"] if fcst else None,
         "threshold_source": fcst["threshold_source"] if fcst else None,
         "is_pinned": fcst["is_pinned"] if fcst else False,
+        "short_record": fcst["short_record"] if fcst else False,
         "has_forecast": fcst is not None,
         "has_seasonal": has_seasonal,
         "has_trend_flag": trend_flag is not None,
@@ -583,7 +935,8 @@ def station_detail(cat_row: pd.Series, status: dict, fresh: dict,
                    fcst: dict | None, seasonal: dict | None,
                    status_month: int | None,
                    trend_flag: dict | None = None,
-                   slug: str | None = None) -> dict:
+                   slug: str | None = None,
+                   verification: dict | None = None) -> dict:
     return {
         "schema_version": SCHEMA_VERSION,
         "station": {
@@ -602,6 +955,7 @@ def station_detail(cat_row: pd.Series, status: dict, fresh: dict,
         "forecast": fcst,
         "seasonal": seasonal,
         "trend_flag": trend_flag,
+        "verification": verification,
     }
 
 
@@ -672,6 +1026,16 @@ def build_pack(inputs: PackInputs, out_dir: Path, *,
         fresh_by_sid = {str(r["station_id"]): r
                         for _, r in inputs.freshness.iterrows()}
 
+    # Verification trail: slice the archived FORECAST fans once, grouped by
+    # station — _verification_block picks each station's newest closed window.
+    verify_by_sid: dict[str, pd.DataFrame] = {}
+    if (inputs.pastas_fan_archive is not None
+            and not inputs.pastas_fan_archive.empty):
+        va = inputs.pastas_fan_archive
+        if "segment" in va.columns:
+            va = va[va["segment"] == "forecast"]
+        verify_by_sid = {str(k): g for k, g in va.groupby("station_id")}
+
     # Trend-screen stability flags (roadmap 1.1) — an operator review queue.
     # Only high-confidence data-quality classes (public_trend_provenance,
     # default artifact_like) surface on the public map; the rest of
@@ -734,7 +1098,8 @@ def build_pack(inputs: PackInputs, out_dir: Path, *,
         seas = None
         if seasonal_all is not None and not seasonal_all.empty:
             seas = _seasonal_block(
-                seasonal_all[seasonal_all["station_id"] == sid])
+                seasonal_all[seasonal_all["station_id"] == sid],
+                now=now_ts.tz_localize(None))
             if seas is not None:
                 n_seasonal += 1
 
@@ -760,11 +1125,85 @@ def build_pack(inputs: PackInputs, out_dir: Path, *,
             observed = [[iso_date(d), jround(v, LEVEL_DP)]
                         for d, v in tail.items()]
 
+        verification = _verification_block(verify_by_sid.get(sid), series,
+                                           now_ts.tz_localize(None))
         detail = station_detail(cat_row, status, fresh,
                                 _normals_rows(station_norms),
                                 observed, fcst, seas, st["month"], tflag,
-                                slug=slug)
+                                slug=slug, verification=verification)
         _dump(detail, building / "stations" / f"{sid}.json", pretty=pretty)
+
+    # -----------------------------------------------------------------------
+    # RiverCast (flow gauges) — Stage 7. GRACEFUL: any missing input among
+    # flow_catalogue / flow_summary / flow_fan means zero flow stations, the
+    # pack builds exactly as it does without this block (docs §6). v1 launch
+    # scope: a flow station is published ONLY when it has a fan (its own
+    # gate-driven admission — no "outside forecast scope" tier for rivers).
+    #
+    # n_gw_features is snapshotted BEFORE flow features are appended:
+    # meta.counts.stations / meta.coverage stay GW-ONLY (their long-documented
+    # semantics — changing what they count would be a semantic change to an
+    # existing key, which the contract's change policy requires a version
+    # bump for). Flow gets its OWN counters (flow_gauges/flow_with_forecast).
+    # -----------------------------------------------------------------------
+    n_gw_features = len(features)
+    n_flow, n_flow_forecast = 0, 0
+    flow_summary_latest = _latest_run_only(inputs.flow_summary)
+    if (flow_summary_latest is not None and not flow_summary_latest.empty
+            and inputs.flow_catalogue is not None
+            and not inputs.flow_catalogue.empty):
+        fcat = inputs.flow_catalogue.drop_duplicates("station_id")
+        fcat = fcat[fcat["lat"].notna() & fcat["lon"].notna()]
+        fcat_by_gid = {str(r["station_id"]): r for _, r in fcat.iterrows()}
+        flow_fan_all = (inputs.flow_fan if inputs.flow_fan is not None
+                        else pd.DataFrame(columns=["gauge_id"]))
+        rain_dep_by_gid: dict[str, bool] = {}
+        if (inputs.flow_gate is not None and not inputs.flow_gate.empty
+                and "rain_dependent" in inputs.flow_gate.columns):
+            rain_dep_by_gid = {str(r["gauge_id"]): bool(r["rain_dependent"])
+                              for _, r in inputs.flow_gate.iterrows()}
+        linked_by_gid = _linked_boreholes_map(inputs.station_links)
+
+        for gid in sorted(flow_summary_latest["gauge_id"].astype(str).unique()):
+            cat_row = fcat_by_gid.get(gid)
+            if cat_row is None:
+                continue                       # summary row with no catalogue entry
+            fan_rows = (flow_fan_all[flow_fan_all["gauge_id"] == gid]
+                       if not flow_fan_all.empty else None)
+            if fan_rows is None or fan_rows.empty:
+                continue                       # no fan -> gauge doesn't publish (launch scope)
+            srow = (flow_summary_latest[flow_summary_latest["gauge_id"] == gid]
+                    .iloc[0])
+            series = (_read_flow_shard(inputs.flow_shard_dir, gid)
+                     if inputs.flow_shard_dir is not None else pd.Series(dtype="float64"))
+            slug = _assign_slug(gid, cat_row.get("station_name"))
+
+            gauge_norms = _flow_monthly_normals(series, gid)
+            st = status_from_series(series, gid, gauge_norms,
+                                    now=now_ts.tz_localize(None))
+            status = _status_block(st)
+            fresh = _flow_freshness_block(series, now_ts.tz_localize(None))
+            rain_dep = rain_dep_by_gid.get(gid, False)
+            fcst = _flow_forecast_block(srow, fan_rows, rain_dep)
+            winterbourne, dry_months = _winterbourne_info(series)
+            n_flow += 1
+            n_flow_forecast += 1               # every published flow station carries a fan (v1)
+
+            features.append(flow_station_feature(cat_row, status, fresh,
+                                                  rain_dep, slug))
+
+            tail = series
+            if not series.empty:
+                cutoff = series.index.max() - pd.Timedelta(days=history_days)
+                tail = series[series.index >= cutoff]
+            observed = [[iso_date(d), jround(v, LEVEL_DP)]
+                        for d, v in tail.items()]
+
+            detail = flow_station_detail(
+                cat_row, status, fresh, _normals_rows(gauge_norms), observed,
+                fcst, st["month"], slug, linked_by_gid.get(gid, []),
+                winterbourne, dry_months)
+            _dump(detail, building / "stations" / f"{gid}.json", pretty=pretty)
 
     if not features:
         shutil.rmtree(building)
@@ -776,16 +1215,24 @@ def build_pack(inputs: PackInputs, out_dir: Path, *,
     # Lightweight machine-readable catalogue (stations/index.json) — the geojson
     # identity/flag fields without the heavy per-frame payload, for API
     # consumers who just need "what stations exist and where". Additive (2026-07).
-    _dump([{
-        "station_id": f["properties"]["station_id"],
-        "slug": f["properties"]["slug"],
-        "name": f["properties"]["name"],
-        "lat": f["geometry"]["coordinates"][1],
-        "lon": f["geometry"]["coordinates"][0],
-        "aquifer_designation": f["properties"]["aquifer_designation"],
-        "has_forecast": f["properties"]["has_forecast"],
-        "has_seasonal": f["properties"]["has_seasonal"],
-    } for f in features], building / "stations" / "index.json", pretty=pretty)
+    # A flow row additionally carries "station_type": "flow" (absent for GW,
+    # same "absent means gw" rule as the geojson — see docs §2.1/§5.3); flow
+    # features have no aquifer/seasonal concept, hence the .get() defaults.
+    def _index_row(f: dict) -> dict:
+        p = f["properties"]
+        row = {
+            "station_id": p["station_id"], "slug": p["slug"], "name": p["name"],
+            "lat": f["geometry"]["coordinates"][1],
+            "lon": f["geometry"]["coordinates"][0],
+            "aquifer_designation": p.get("aquifer_designation"),
+            "has_forecast": p["has_forecast"],
+            "has_seasonal": p.get("has_seasonal", False),
+        }
+        if p.get("station_type"):
+            row["station_type"] = p["station_type"]
+        return row
+    _dump([_index_row(f) for f in features],
+          building / "stations" / "index.json", pretty=pretty)
 
     # Optional aquifer geology, copied verbatim (the explorer lazy-loads it).
     if inputs.geology_path is not None and inputs.geology_path.exists():
@@ -796,24 +1243,29 @@ def build_pack(inputs: PackInputs, out_dir: Path, *,
         forecast_run = iso_utc(summary["run"].iloc[0])
     seasonal_run = None
     if seasonal_all is not None and not seasonal_all.empty:
+        # origin_date = the dominant cohort's anchor, not iloc[0]: a mixed
+        # archive (stale per-borehole seeds) sorts arbitrarily, and the first
+        # row can stamp a months-old origin on a current run.
         seasonal_run = {"run": iso_utc(seasonal_all["run"].iloc[0]),
-                        "origin_date": iso_date(seasonal_all["origin_date"].iloc[0])}
+                        "origin_date": iso_date(_dominant_origin(seasonal_all))}
 
     meta = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": iso_utc(now_ts),
         "region": inputs.region_name,
-        "counts": {"stations": len(features), "with_forecast": n_forecast,
+        "counts": {"stations": n_gw_features, "with_forecast": n_forecast,
                    "with_seasonal": n_seasonal, "excluded": len(excluded),
-                   "no_data": n_no_data},
+                   "no_data": n_no_data, "flow_gauges": n_flow,
+                   "flow_with_forecast": n_flow_forecast},
         # Network-coverage audit (roadmap honorable mention) — honest disclosure
         # of how much of the monitored network is published / forecast / live, so
         # the explorer doesn't read as a cherry-picked demo. `live_capable` is the
         # network count of boreholes with an EA real-time feed (None if unknown);
-        # `catalogued` = published + no-data + excluded.
+        # `catalogued` = published + no-data + excluded. GW-only (see the
+        # RiverCast block above) — unchanged semantics, pre-dates flow gauges.
         "coverage": {
-            "catalogued": len(features) + n_no_data + len(excluded),
-            "observed": len(features),
+            "catalogued": n_gw_features + n_no_data + len(excluded),
+            "observed": n_gw_features,
             "with_forecast": n_forecast,
             "no_data": n_no_data,
             "excluded": len(excluded),
@@ -823,6 +1275,7 @@ def build_pack(inputs: PackInputs, out_dir: Path, *,
         "inputs": inputs.source_meta,
         "attribution": ATTRIBUTION,
         "disclaimer": DISCLAIMER,
+        "river_disclaimer": RIVER_DISCLAIMER,
         "history_days": history_days,
         "forecast_frames": [label for label, _ in TIMELINE_FRAMES],
         "forecast_frame_days": _frame_days(_seasonal_month_starts(seasonal_all),
@@ -834,12 +1287,17 @@ def build_pack(inputs: PackInputs, out_dir: Path, *,
     # counts over stations WITH a current status), appended to a small
     # append-only store and shipped in the pack for the landing sparkline /
     # any "X% below normal" headline. Additive contract file (2026-07).
+    # GW-only (matches meta.counts.stations above) — a flow feature's own
+    # "status" is against a completely different climatology (flow, not
+    # head), so folding it into the same below/near/above tally would quietly
+    # change what this file has always meant, without a version bump.
+    gw_features = [f for f in features if not f["properties"].get("station_type")]
     nat_row = {
         "date": iso_date(now_ts),
-        "below": sum(1 for f in features if f["properties"]["status"] == "below"),
-        "near": sum(1 for f in features if f["properties"]["status"] == "near"),
-        "above": sum(1 for f in features if f["properties"]["status"] == "above"),
-        "stations": len(features),
+        "below": sum(1 for f in gw_features if f["properties"]["status"] == "below"),
+        "near": sum(1 for f in gw_features if f["properties"]["status"] == "near"),
+        "above": sum(1 for f in gw_features if f["properties"]["status"] == "above"),
+        "stations": n_gw_features,
         "with_forecast": n_forecast,
     }
     hist_store = out_dir.parent / "national_history.json"

@@ -42,16 +42,34 @@ def _safe_alpha(alpha) -> float:
 # A calibrated model is fully described by this small dict (JSON-serialisable),
 # so we never pickle a pastas object — the model is reconstructed from params.
 #   station_id, rfunc, recharge          — structure
-#   params, param_names                  — calibrated optimal parameters
-#   sigma                                — residual std (m), for the predictive band
+#   model_kind                           — "gw" (single recharge stress, the
+#                                           historical default — absent on any
+#                                           ModelRec serialised before this field
+#                                           existed means "gw") or "flow_2s"
+#                                           (recharge stress + a second raw-rain
+#                                           "quickflow" stress, low-flow build)
+#   params, param_names                  — calibrated optimal parameters (both
+#                                           stresses + noise, for flow_2s)
+#   sigma                                — residual std (m, or log-m3/s for flow_2s),
+#                                           for the predictive band
 #   alpha                                — AR1 decay (days), for residual carry-forward
+#   eps                                  — flow_2s only: the log-transform epsilon
+#                                           (logq = log(Q + eps)), so zero-flow days
+#                                           round-trip through save/load unchanged
 #   evp, n_obs, train_max, fitted_on     — provenance / fit quality
 ModelRec = dict
 
 
 def _norm(s: pd.Series) -> pd.Series:
     s = s.copy()
-    s.index = pd.to_datetime(s.index).tz_localize(None).normalize()
+    # .as_unit("ns"): pastas 1.14 silently produces a DEGENERATE fit (all-NaN
+    # residuals -> sigma/EVP NaN) on a datetime64[us] index — exactly what a
+    # parquet round-trip yields (seen live 2026-07-14: every flow shard read
+    # back from data/features/flow_by_station gave EVP NaN, while the same
+    # values on a ns index gave EVP ~93). Coerce here, the single choke point
+    # every calibrate/simulate series passes through.
+    s.index = (pd.DatetimeIndex(pd.to_datetime(s.index))
+               .as_unit("ns").tz_localize(None).normalize())
     return s
 
 
@@ -66,9 +84,19 @@ def _daily(s: pd.Series, *, fill: str) -> pd.Series:
 
 
 def _build_model(head: pd.Series, prec: pd.Series, evap: pd.Series,
-                 rfunc: str, recharge: str):
+                 rfunc: str, recharge: str, *, model_kind: str = "gw"):
     """Construct an (unsolved) pastas Model with the standard recharge stress +
-    AR1 noise. Lazy pastas import. Used by both calibrate() and forecasting."""
+    AR1 noise. Lazy pastas import. Used by both calibrate() and forecasting.
+
+    model_kind="flow_2s" (docs/product/lowflow/analysis.md §3, the two-pathway
+    flow model) adds a second stress — ``ps.StressModel(prec, rfunc=ps.Gamma(),
+    name="quickflow")`` on raw rain, direct (no FlexModel front-end) — alongside
+    the existing FlexModel recharge stress, so the solver can resolve a fast
+    rain-driven pathway (quickflow) separately from the slow aquifer-drainage
+    pathway (the recharge stress). ``head`` is whatever target series the model
+    is fit to — real head for "gw", logQ for "flow_2s" (the log transform is the
+    caller's job — see calibrate_flow / simulate_path).
+    """
     import pastas as ps
     rfunc_obj = getattr(ps, rfunc)()
     recharge_obj = getattr(ps.rch, recharge)()
@@ -77,11 +105,54 @@ def _build_model(head: pd.Series, prec: pd.Series, evap: pd.Series,
                                         _daily(evap, fill="ffill"),
                                         rfunc=rfunc_obj, name="rch",
                                         recharge=recharge_obj))
+    if model_kind == "flow_2s":
+        ml.add_stressmodel(ps.StressModel(_daily(prec, fill="zero"),
+                                          rfunc=ps.Gamma(), name="quickflow",
+                                          settings="prec"))
     try:
         ml.add_noisemodel(ps.ArNoiseModel())
     except Exception:
         pass
     return ml
+
+
+def _fit_alpha(ml) -> float | None:
+    """The solved AR1 noise decay (days), or None if no noise model solved."""
+    for name in ml.parameters.index:
+        if "alpha" in name.lower():
+            return float(ml.parameters.loc[name, "optimal"])
+    return None
+
+
+def _solve_with_alpha_rescue(build_fn, train_max: pd.Timestamp | None):
+    """Solve a fresh unsolved model from ``build_fn()`` (a zero-arg callable so
+    a rescue re-solve starts from a clean model, not a mutated one); on a
+    degenerate fit, re-solve with noise_alpha bounded and keep whichever
+    explains more variance. Shared by calibrate() and calibrate_flow() — see
+    calibrate()'s "Degenerate-fit rescue" comment for the full rationale.
+    Returns (ml, evp) for the kept fit."""
+    def _solve(bound_noise: bool):
+        m = build_fn()
+        if bound_noise:
+            try:
+                m.set_parameter("noise_alpha", pmax=_ALPHA_MAX_DAYS)
+            except Exception:
+                pass                      # no noise model — nothing to bound
+        m.solve(tmax=train_max, report=False)
+        try:
+            e = float(m.stats.evp())
+        except Exception:
+            e = float("nan")
+        return m, e
+
+    ml, evp = _solve(bound_noise=False)
+    a0 = _fit_alpha(ml)
+    if (not np.isfinite(evp) or evp < 5.0
+            or (a0 is not None and np.isfinite(a0) and a0 > 10 * _ALPHA_MAX_DAYS)):
+        ml2, evp2 = _solve(bound_noise=True)
+        if np.isfinite(evp2) and (not np.isfinite(evp) or evp2 > evp):
+            ml, evp = ml2, evp2
+    return ml, evp
 
 
 def _noise_qa(ml, resid: pd.Series, head_norm: pd.Series) -> dict:
@@ -121,28 +192,6 @@ def calibrate(station_id: str, head: pd.Series, prec: pd.Series, evap: pd.Series
     on this fallback). Recorded so a stale "joined" model is easy to spot after
     a recalibration pass.
     """
-    def _solve(bound_noise: bool):
-        m = _build_model(head, prec, evap, rfunc, recharge)
-        if bound_noise:
-            try:
-                m.set_parameter("noise_alpha", pmax=_ALPHA_MAX_DAYS)
-            except Exception:
-                pass                      # no noise model — nothing to bound
-        m.solve(tmax=train_max, report=False)
-        try:
-            e = float(m.stats.evp())
-        except Exception:
-            e = float("nan")
-        return m, e
-
-    ml, evp = _solve(bound_noise=False)
-
-    def _fit_alpha(m):
-        for name in m.parameters.index:
-            if "alpha" in name.lower():
-                return float(m.parameters.loc[name, "optimal"])
-        return None
-
     # Degenerate-fit rescue: on a marginal borehole the optimizer can park
     # noise_alpha at its huge default upper bound (~5000 d), laundering the
     # whole signal into a pseudo-random-walk noise term — EVP collapses to ~0
@@ -150,12 +199,8 @@ def calibrate(station_id: str, head: pd.Series, prec: pd.Series, evap: pd.Series
     # simulate_path caps alpha at _ALPHA_MAX_DAYS (365 d), so re-solve with the
     # SAME bound at fit time and keep whichever fit explains more variance.
     # (Seen live: EVP 0.0 -> 59.0 on a real borehole.)
-    a0 = _fit_alpha(ml)
-    if (not np.isfinite(evp) or evp < 5.0
-            or (a0 is not None and np.isfinite(a0) and a0 > 10 * _ALPHA_MAX_DAYS)):
-        ml2, evp2 = _solve(bound_noise=True)
-        if np.isfinite(evp2) and (not np.isfinite(evp) or evp2 > evp):
-            ml, evp = ml2, evp2
+    ml, evp = _solve_with_alpha_rescue(
+        lambda: _build_model(head, prec, evap, rfunc, recharge), train_max)
 
     resid = ml.residuals()
     sigma = float(resid.std())
@@ -167,6 +212,7 @@ def calibrate(station_id: str, head: pd.Series, prec: pd.Series, evap: pd.Series
 
     return {
         "station_id": station_id,
+        "model_kind": "gw",
         "rfunc": rfunc,
         "recharge": recharge,
         "params": [float(x) for x in ml.parameters["optimal"].to_numpy()],
@@ -183,12 +229,78 @@ def calibrate(station_id: str, head: pd.Series, prec: pd.Series, evap: pd.Series
     }
 
 
+def calibrate_flow(gauge_id: str, q: pd.Series, prec: pd.Series, evap: pd.Series,
+                   *, train_max: pd.Timestamp | None = None,
+                   rfunc: str = "Gamma", recharge: str = "FlexModel",
+                   precip_source: str = "gauge") -> ModelRec:
+    """Calibrate the two-pathway flow model (docs/product/lowflow/analysis.md
+    §3) on RAW flow ``q`` (m3/s, the Stage-2 shards' Flow_m3s column) and
+    return a ModelRec with ``model_kind="flow_2s"``.
+
+    Clone of ``calibrate()`` (same degenerate-fit noise-alpha rescue, same
+    provenance fields) plus a second stress: ``ps.StressModel(prec,
+    rfunc=ps.Gamma(), name="quickflow")`` on raw rain alongside the existing
+    FlexModel recharge stress (the exact construction transplanted from
+    docs/product/lowflow/scripts/modelB_twopath.py — fast path steered with
+    ``quickflow_a`` initial=2.0, pmax=15.0 so the solver doesn't let the two
+    pathways swap roles).
+
+    The model is fit on ``logq = np.log(Q + eps)``, not raw Q — a river's
+    quickflow pathway only resolves cleanly on log-flow (analysis.md §2/§3).
+    ``eps = max(0.001, Q[Q>0].min()/10)`` is stored on the returned rec so
+    zero-flow days (winterbournes) round-trip through the same transform on
+    reload, and so ``simulate_path`` can apply it to raw Q it's given later.
+    """
+    q_norm = _norm(q).dropna()
+    positive = q_norm[q_norm > 0]
+    eps = max(0.001, float(positive.min()) / 10) if len(positive) else 0.001
+    logq = np.log(q_norm + eps)
+
+    def _build():
+        ml = _build_model(logq, prec, evap, rfunc, recharge, model_kind="flow_2s")
+        # steer the fast (quickflow) path fast + the slow (recharge) path slow
+        # so the solver doesn't let them swap roles (modelB_twopath.py).
+        ml.set_parameter("quickflow_a", initial=2.0, pmax=15.0)
+        ml.set_parameter("rch_A", initial=1.0)
+        return ml
+
+    ml, evp = _solve_with_alpha_rescue(_build, train_max)
+
+    resid = ml.residuals()
+    sigma = float(resid.std())
+    alpha = _fit_alpha(ml)
+    if not alpha or not np.isfinite(alpha) or alpha <= 0:
+        phi = float(pd.Series(resid).autocorr(lag=1))
+        phi = min(max(phi, 1e-3), 0.999)
+        alpha = -1.0 / np.log(phi)
+
+    return {
+        "station_id": gauge_id,
+        "model_kind": "flow_2s",
+        "rfunc": rfunc,
+        "recharge": recharge,
+        "params": [float(x) for x in ml.parameters["optimal"].to_numpy()],
+        "param_names": [str(x) for x in ml.parameters.index],
+        "sigma": sigma,
+        "alpha": alpha,
+        "eps": eps,
+        "evp": evp,
+        "noise_qa": _noise_qa(ml, resid, logq),
+        "n_obs": int(logq.shape[0]),
+        "train_max": (None if train_max is None
+                      else pd.Timestamp(train_max).date().isoformat()),
+        "fitted_on": date.today().isoformat(),
+        "precip_source": precip_source,
+    }
+
+
 def simulate_path(rec: ModelRec, head: pd.Series, prec: pd.Series,
                   evap: pd.Series, origin: pd.Timestamp,
                   target_dates: pd.DatetimeIndex
                   ) -> tuple[np.ndarray, np.ndarray]:
-    """Forecast GW at arbitrary ``target_dates``, seeded at the observed
-    ``origin`` level via AR1 carry-forward of the origin residual.
+    """Forecast GW (or, for a ``model_kind="flow_2s"`` rec, logQ) at arbitrary
+    ``target_dates``, seeded at the observed ``origin`` level via AR1
+    carry-forward of the origin residual.
 
     The deterministic Pastas simulation provides the trajectory shape from the
     (bridged) stresses; the origin residual r0 = obs(origin) − sim(origin) is
@@ -199,20 +311,44 @@ def simulate_path(rec: ModelRec, head: pd.Series, prec: pd.Series,
     ``prec``/``evap`` are the *bridged* daily series (observed history + forecast
     scenario over the window); they need only span enough history for warmup
     through max(target_dates). Gaps are handled by the daily-grid reindex.
+
+    ``head`` is always the caller's raw observed series (real head for "gw",
+    raw flow Q m3/s for "flow_2s" — the same units passed to calibrate() /
+    calibrate_flow()). For "flow_2s" it is log-transformed here with the rec's
+    stored ``eps`` before the model is built/simulated and before the residual
+    anchor is computed — Pastas was fit on logQ, and the rebuilt model + the
+    AR1 band math below must operate on that same logQ (analysis.md §3/§4:
+    "exponentiate only at publish", not here). Both stresses are rebuilt via
+    ``_build_model``'s ``model_kind`` dispatch — nothing downstream of this
+    point (the AR1 band, seeding, sigma_inflation) changes for flow.
     """
     origin = pd.Timestamp(origin).tz_localize(None).normalize()
     target = pd.DatetimeIndex(pd.to_datetime(target_dates)).tz_localize(None).normalize()
-    ml = _build_model(head, prec, evap, rec["rfunc"], rec["recharge"])
+    model_kind = rec.get("model_kind", "gw")
+    if model_kind == "flow_2s":
+        eps = float(rec.get("eps", 0.001))
+        series = np.log(_norm(head).dropna() + eps)
+    else:
+        series = head
+    ml = _build_model(series, prec, evap, rec["rfunc"], rec["recharge"],
+                      model_kind=model_kind)
     p = np.asarray(rec["params"], dtype=float)
     sim = _norm(ml.simulate(p=p, tmin=min(origin, target.min()), tmax=target.max()))
 
-    r0 = float(_norm(head).get(origin, np.nan) - sim.get(origin, np.nan))
+    r0 = float(_norm(series).get(origin, np.nan) - sim.get(origin, np.nan))
     if not np.isfinite(r0):
         r0 = 0.0
     k = (target - origin).days.to_numpy(dtype=float)
     decay = np.exp(-np.clip(k, 0, None) / _safe_alpha(rec.get("alpha")))
     mean = sim.reindex(target).to_numpy(float) + r0 * decay
-    sig = float(rec["sigma"]) * np.sqrt(np.clip(1.0 - decay ** 2, 1e-6, None))
+    # sigma_inflation (default 1.0): the short-record band-widening factor
+    # (src.forecast.pastas.screen) — a per-borehole multiplier calibrated so the
+    # published band covers observations at the nominal rate. Applied HERE so the
+    # SAME widened band drives both the gate hindcast (seeded_forecast) and the
+    # production fan (ensemble.drive_borehole → gw_sigma). Absent on full-record
+    # models → 1.0 → unchanged.
+    infl = float(rec.get("sigma_inflation", 1.0) or 1.0)
+    sig = infl * float(rec["sigma"]) * np.sqrt(np.clip(1.0 - decay ** 2, 1e-6, None))
     return mean, sig
 
 

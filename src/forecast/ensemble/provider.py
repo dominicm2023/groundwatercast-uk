@@ -20,12 +20,18 @@ before any parsing, satisfying the raw-data-for-audit non-negotiable.
 from __future__ import annotations
 
 import abc
-from datetime import date
+import re
+import shutil
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pandas as pd
 
 OUTPUT_COLUMNS = ["member", "date", "precip_mm"]
+
+# Cycle-cache dirs are named YYYYMMDDHH exactly (see _cache_dir) — anything
+# else under <cache_root>/<name>/ is left alone by pruning.
+_CYCLE_DIR_RE = re.compile(r"^\d{10}$")
 
 
 class EnsembleRainfallProvider(abc.ABC):
@@ -65,6 +71,68 @@ class EnsembleRainfallProvider(abc.ABC):
         d = self.cache_root / self.name / run
         d.mkdir(parents=True, exist_ok=True)
         return d
+
+    # -- cache retention -------------------------------------------------------
+    def prune_old_cycles(self, retention_days: int) -> tuple[int, int]:
+        """Delete this provider's cycle-cache dirs older than ``retention_days``.
+
+        Cache layout (see :meth:`_cache_dir`): ``<cache_root>/<name>/<run>``,
+        one dir per model cycle, ``run`` named ``YYYYMMDDHH``. Per-(run, steps)
+        payloads are immutable, so once a cycle falls out of the retention
+        window nothing downstream ever needs it again.
+
+        Ages are parsed from the directory NAME, never the filesystem mtime —
+        an mtime can be bumped by unrelated activity (a re-read, a backup
+        walk, a clock skew) long after the cycle itself is stale, which would
+        silently defeat retention. Anything that doesn't match the exact
+        10-digit ``YYYYMMDDHH`` pattern, or doesn't parse as a real
+        date/time, is left untouched — defensive, so pruning can never touch
+        data this provider didn't create.
+
+        ``retention_days <= 0`` disables pruning entirely (documented
+        opt-out, e.g. for debugging a run against a full cache history).
+
+        Returns ``(dirs_pruned, bytes_freed)``.
+        """
+        if retention_days <= 0:
+            return (0, 0)
+        provider_dir = self.cache_root / self.name
+        if not provider_dir.is_dir():
+            return (0, 0)
+        now = datetime.now(timezone.utc)
+        pruned, freed = 0, 0
+        for entry in sorted(provider_dir.iterdir()):
+            if not entry.is_dir() or not _CYCLE_DIR_RE.match(entry.name):
+                continue
+            try:
+                run_dt = datetime.strptime(entry.name, "%Y%m%d%H").replace(
+                    tzinfo=timezone.utc)
+            except ValueError:
+                continue                    # malformed (e.g. month 13) — leave it
+            age_days = (now - run_dt).total_seconds() / 86400.0
+            if age_days < retention_days:
+                continue
+            size = sum(f.stat().st_size for f in entry.rglob("*") if f.is_file())
+            shutil.rmtree(entry)
+            pruned += 1
+            freed += size
+        return (pruned, freed)
+
+    def prune_old_cycles_safe(self, retention_days: int) -> tuple[int, int]:
+        """:meth:`prune_old_cycles`, but a pruning failure only warns — it
+        must never fail the fetch that triggered it. ``retention_days <= 0``
+        (pruning disabled) is silent — there is nothing to report."""
+        if retention_days <= 0:
+            return (0, 0)
+        try:
+            pruned, freed = self.prune_old_cycles(retention_days)
+        except Exception as exc:
+            print(f"! ensemble cache prune failed ({type(exc).__name__}: {exc}) "
+                  f"— leaving {self.cache_root / self.name} as-is")
+            return (0, 0)
+        print(f"pruned {pruned} ensemble cycle dir(s) older than {retention_days} "
+              f"days (freed ~{freed / 1e6:.0f} MB)")
+        return (pruned, freed)
 
     @staticmethod
     def _validate(df: pd.DataFrame) -> pd.DataFrame:

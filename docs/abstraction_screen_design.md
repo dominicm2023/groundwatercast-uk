@@ -1,5 +1,14 @@
 # Abstraction-influenced-site screening (roadmap H7) — design note
 
+> **Update 2026-07-09:** the §3 ingest now EXISTS —
+> `scripts/build_abstraction_points.py` → `data/processed/abstraction_points.csv`
+> (EA Water Rights Trading NALD extract, OGL v3, Jan 2025: 11,597 licences,
+> point E/N + lat/lon, source, purpose, licence-level max quantities;
+> holder identities stripped). Built for the valley-3D abstraction layer; the
+> capture-zone join to boreholes (§3's screen) is now unblocked and only
+> awaits the §5 decision. Caveats to honour: >100 m³/d returns-submitting
+> licences only; security-sensitive supplies excluded; capacity ≠ pumping.
+
 > **Status:** scoped 2026-06-17; prototyped 2026-06-17. **Shipped:** the
 > register-reason path (`abstraction_influenced`). **Experimental & disabled:** the
 > advisory amplitude detector — it over-flags natural Chalk on the real fleet (see

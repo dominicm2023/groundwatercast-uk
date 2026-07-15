@@ -28,7 +28,7 @@ SUMMARY_COLS = ["station_id", "run", "scope", "origin_date", "stale_days", "hori
                 "first_cross_median", "first_cross_p25", "first_cross_p75",
                 "first_cross_median_lead", "censored_frac", "gw_p50_end",
                 "p_above_p90_14d", "model_spread_mean", "n_members", "n_samples",
-                "headline"]
+                "short_record", "headline"]
 
 # Tiering window: breach probability grows with window length, and the
 # dashboard tiers were calibrated on 14-day windows — so p_breach_14d and
@@ -97,8 +97,25 @@ def mc_trajectories(W: np.ndarray, sigma_vec: np.ndarray, alpha: float, n: int,
 
 def _breach_from_samples(samples: np.ndarray, dates: pd.DatetimeIndex,
                          threshold: float | None, *,
+                         direction: str = "above",
                          operational_window_days: int = OPERATIONAL_WINDOW_DAYS
                          ) -> dict:
+    """Breach probability + censored first-crossing distribution from n×H
+    Monte-Carlo trajectories.
+
+    ``direction`` picks the crossing sense: ``"above"`` (default — the GW
+    sense, level rises to/above ``threshold``; every existing caller keeps
+    this default, so behaviour is unchanged) or ``"below"`` (the low-flow
+    Rivers-layer sense — level falls to/below ``threshold``, e.g. Q95). Only
+    the crossing test and the first-crossing search change between the two;
+    sampling, windowing and the censored-fraction bookkeeping are direction-
+    agnostic and shared unchanged — this is the one seam the flow build's
+    breach stats (``src/forecast/pastas/flow_summary.py``) reuse rather than
+    fork, so a low-flow "breach" can never silently mean "rises above" by a
+    copy-paste slip.
+    """
+    if direction not in ("above", "below"):
+        raise ValueError(f"direction must be 'above' or 'below', got {direction!r}")
     H = samples.shape[1]
     out = {"horizon_days": H, "n_samples": samples.shape[0],
            "p_breach": np.nan, "p_breach_14d": np.nan,
@@ -108,15 +125,15 @@ def _breach_from_samples(samples: np.ndarray, dates: pd.DatetimeIndex,
            "gw_p50_end": float(np.median(samples[:, -1]))}
     if threshold is None:
         return out
-    ge = samples >= threshold                       # n×H
-    crossed = ge.any(axis=1)
+    hit = (samples >= threshold) if direction == "above" else (samples <= threshold)
+    crossed = hit.any(axis=1)
     p = float(crossed.mean())
     out["p_breach"] = p
     out["p_breach_14d"] = float(
-        ge[:, :int(operational_window_days)].any(axis=1).mean())
+        hit[:, :int(operational_window_days)].any(axis=1).mean())
     out["censored_frac"] = 1.0 - p
     if crossed.any():
-        first_lead = ge[crossed].argmax(axis=1) + 1  # 1-based lead of first cross
+        first_lead = hit[crossed].argmax(axis=1) + 1  # 1-based lead of first cross
         med, p25, p75 = (float(np.quantile(first_lead, q)) for q in (0.5, 0.25, 0.75))
         out["first_cross_median_lead"] = med
         dl = list(dates)
@@ -195,6 +212,7 @@ def aggregate_pastas(members_df: pd.DataFrame, models: dict, *,
                "stale_days": stale_days, "threshold": thr,
                "threshold_source": src, "p_above_p90_14d": p_above,
                "model_spread_mean": spread_mean,
+               "short_record": bool(rec.get("short_record", False)),
                "n_members": int(W.shape[1]), **stats}
         row["headline"] = headline_sentence(row)
         summaries.append(row)

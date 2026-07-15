@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -213,19 +214,28 @@ def main() -> int:
     n_skipped = 0
     n_errored = 0
 
-    for _, r in matched.iterrows():
-        rain_id = r["rain_measure_id"]
-        notation = r["fm_notation"]
-        try:
-            n_written, _ = update_one_file(rain_id, notation, now)
-            if n_written > 0:
-                n_touched += 1
-                n_dates_total += n_written
-            else:
-                n_skipped += 1
-        except Exception as exc:
-            print(f"  ! {rain_id} ({r.get('station_name', '?')}): {exc}")
-            n_errored += 1
+    # ~520 gauges × ~2 s of serial HTTP ≈ 30 min — what ballooned the hourly
+    # --live and locked out the 06:30 forecast cron (2026-07-09). The per-gauge
+    # work is independent (plain requests.get, one CSV + one audit file each),
+    # so fan the fetches over a small thread pool: wall time drops to ~4 min.
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futs = {pool.submit(update_one_file, r["rain_measure_id"],
+                            r["fm_notation"], now): r
+                for _, r in matched.iterrows()}
+        for fut in as_completed(futs):
+            r = futs[fut]
+            try:
+                n_written, _ = fut.result()
+                if n_written > 0:
+                    n_touched += 1
+                    n_dates_total += n_written
+                else:
+                    n_skipped += 1
+            except Exception as exc:
+                print(f"  ! {r['rain_measure_id']} ({r.get('station_name', '?')}): {exc}")
+                n_errored += 1
 
     print("\nDone:")
     print(f"  gauges touched:   {n_touched}")

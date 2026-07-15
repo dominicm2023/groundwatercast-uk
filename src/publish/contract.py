@@ -33,7 +33,8 @@ GEOJSON_STATUS_PROPS = ("status", "percentile", "trend", "level",
 GEOJSON_FRESHNESS_PROPS = ("freshness", "days_since", "data_source")
 GEOJSON_FORECAST_PROPS = ("tier", "p_breach_14d", "p_above_p90_14d",
                           "first_cross_median", "headline",
-                          "threshold", "threshold_source", "is_pinned")
+                          "threshold", "threshold_source", "is_pinned",
+                          "short_record")
 GEOJSON_FLAG_PROPS = ("has_forecast", "has_seasonal")
 # Trend-screen stability flag (roadmap 1.1) — present on every feature so the
 # explorer can filter/style; ``has_trend_flag`` false + null severity when the
@@ -70,7 +71,17 @@ SUMMARY_COL_SOURCES: dict[str, str] = {
     "n_samples": "n_samples",
     "headline": "headline",
 }
-DETAIL_FORECAST_KEYS = (*SUMMARY_COL_SOURCES, "tier", "is_pinned", "fan")
+DETAIL_FORECAST_KEYS = (*SUMMARY_COL_SOURCES, "tier", "is_pinned",
+                        "short_record", "fan")
+
+# "How did the last forecast do?" — the most recent ARCHIVED forecast whose full
+# window has closed, scored against what was then observed (the credibility
+# feature: shown plainly whether it did well or badly). ``n_in_band`` counts
+# observed days inside the published P10–P90 (nominal ~80%); ``mae_p50`` is the
+# mean |observed − P50| over the scored days.
+VERIFICATION_KEYS = ("run", "origin_date", "horizon_days",
+                     "n_obs", "n_in_band", "mae_p50", "fan")
+VERIFY_FAN_KEYS = ("lead", "date", "p10", "p50", "p90")
 
 # Fan rows inside the (already-namespaced) ``forecast.fan`` array drop the
 # ``gw_`` prefix; the cross-check roll median and spread keep their names.
@@ -101,3 +112,67 @@ NORMALS_ROW_KEYS = ("month", "p10", "t1", "median", "t2", "p90", "n_years")
 TREND_FLAG_KEYS = ("severity", "provenance_class", "recommended_action",
                    "slope_sen_m_yr", "trend_change_m", "rain_corr",
                    "isolation_class", "neighbour_count", "already_in_register")
+
+# ---------------------------------------------------------------------------
+# RiverCast — Stage 7 of docs/product/lowflow/build_plan.md. Flow gauges are a
+# SECOND station kind published alongside groundwater boreholes, additive
+# throughout (no bump): a GW row/feature never gains a new key (``station_type``
+# is OMITTED for GW — "absent means gw" — so an existing consumer diffing
+# property sets sees no change at all); a flow row/feature is a distinct,
+# smaller shape carrying only what applies to a river gauge.
+# ---------------------------------------------------------------------------
+
+# stations.geojson / stations/index.json — the ONLY key a flow row/feature adds
+# to the identity surface. Present (value "flow") on flow rows; ABSENT
+# (never null, never "gw") on every groundwater row.
+GEOJSON_TYPE_PROPS = ("station_type",)
+
+# stations.geojson flow-feature properties. Deliberately NOT a superset of
+# GEOJSON_FORECAST_PROPS (tier/p_breach_14d/threshold etc. are GW-specific
+# vocabulary that doesn't apply to a below-Q95 low-flow read) — a flow feature
+# carries its own small, honest set. river_name/rain_dependent are read on the
+# map; the fuller forecast numbers live in the detail JSON (fetched on click).
+GEOJSON_FLOW_PROPS = ("river_name", "rain_dependent")
+
+# stations/<id>.json — flow-only additions to the ``station`` block (alongside
+# the shared station_id/slug/name/lat/lon). A flow station has no aquifer;
+# river_name/linked_boreholes/winterbourne describe the gauge itself, not a
+# particular forecast run, so they sit on ``station`` rather than ``forecast``.
+FLOW_STATION_KEYS = ("station_type", "river_name", "linked_boreholes",
+                     "winterbourne", "dry_months")
+
+# stations/<id>.json — keys of a flow station's ``forecast`` block, mirroring
+# SUMMARY_COL_SOURCES's column-source pin but for src.forecast.pastas.
+# flow_summary.SUMMARY_COLS. ``p_below_q95_14d`` is a NEW field (never
+# overloads p_breach_14d — opposite direction, different semantics);
+# ``threshold`` carries the gauge's Q95 (m3/s); ``rain_dependent`` is the
+# admission gate's tier flag (Stage 4), not a summary column.
+FLOW_SUMMARY_COL_SOURCES: dict[str, str] = {
+    "run": "run",
+    "origin_date": "origin_date",
+    "stale_days": "stale_days",
+    "horizon_days": "horizon_days",
+    "threshold": "q95_m3s",
+    "threshold_source": "threshold_source",
+    "p_below_q95": "p_below_q95",
+    "p_below_q95_14d": "p_below_q95_14d",
+    "first_cross_median": "first_cross_median",
+    "first_cross_p25": "first_cross_p25",
+    "first_cross_p75": "first_cross_p75",
+    "first_cross_median_lead": "first_cross_median_lead",
+    "censored_frac": "censored_frac",
+    "q_p50_end": "q_p50_end_m3s",
+    "n_members": "n_members",
+    "n_samples": "n_samples",
+    "headline": "headline",
+}
+DETAIL_FLOW_FORECAST_KEYS = (*FLOW_SUMMARY_COL_SOURCES, "rain_dependent", "fan")
+
+# Flow ``forecast.fan`` rows drop the ``q_`` / ``_m3s`` source decoration the
+# same way FAN_KEY_MAP drops GW's ``gw_`` prefix — both land on the same
+# published names (p10/p50/p90), so a chart component needs no per-type
+# branching to read a fan row. No roll_p50/model_spread: flow_summary.py's
+# aggregate_flow doesn't produce a reduced-form cross-check.
+FLOW_FAN_KEY_MAP: dict[str, str] = {
+    "q_p10_m3s": "p10", "q_p50_m3s": "p50", "q_p90_m3s": "p90",
+}

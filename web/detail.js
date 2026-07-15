@@ -81,6 +81,21 @@
 
   function row(k, v) { return `<div class="d-row"><span class="k">${k}</span><span class="v">${v}</span></div>`; }
 
+  // Winterbourne chip (RiverCast) — "bourne: flowing/dry, typically dry
+  // <months>". Pure presentation of station.dry_months + the current level;
+  // "flowing" is a display convention (level above a tiny epsilon), not a
+  // new model claim.
+  function winterbourneChip(stn, st) {
+    const dry = Array.isArray(stn.dry_months) ? stn.dry_months : [];
+    const monthsTxt = dry.map((m) => monthName(m).slice(0, 3)).join(", ");
+    const level = st && st.level;
+    const flowing = level != null && isFinite(level) && level > 0.001;
+    return `<p class="winterbourne-chip"><span class="chip bourne">` +
+      `🏞 bourne: ${flowing ? "flowing" : "dry"}</span>` +
+      (monthsTxt ? ` <span class="caption">typically dry ${esc(monthsTxt)}</span>` : "") +
+      `</p>`;
+  }
+
   // Collapsed-by-default disclosure section (mirrors the data-drawer / trust-card
   // pattern). Used to demote the secondary panel sections below the fan chart so
   // the summary stays scannable on first click. Returns "" for empty content.
@@ -103,6 +118,10 @@
   function starBtn(stn, detail) {
     const id = stn && stn.station_id;
     if (!id) return "";
+    // Watchlist/alerts are built around GW breach semantics (p_breach_14d,
+    // mAOD thresholds) — not wired for RiverCast's Q95 read yet, so don't
+    // offer a control that would silently evaluate against the wrong field.
+    if (stn.station_type === "flow") return "";
     const W = window.GWC_WATCH;
     const watched = !!(W && W.has && W.has(id));
     const hasFc = !!(detail && detail.forecast);
@@ -170,6 +189,11 @@
     const fr = detail.freshness || {};
     const fc = detail.forecast;            // may be null (status-only stations)
     const mrow = (detail.normals || []).find((r) => r.month === st.month);
+    const isFlow = detail.station && detail.station.station_type === "flow";
+    const C = window.GWC_CHARTS;
+    const unit = C && C.unitOf ? C.unitOf(detail) : "mAOD";
+    const uLabel = C && C.unitLabel ? C.unitLabel(unit) : "mAOD";
+    const fv = C && C.fmtOf ? C.fmtOf(unit) : fmt1;
 
     const obsAge = st.obs_age_days;
     const frLabel = fr.label;
@@ -189,8 +213,10 @@
     parts.push(`based on a ${freshTxt} reading` +
       (ageNum != null ? ` (${ageNum} d old)` : ""));
     if (fc) parts.push(`forecast run ${prettyDateTime(fcRun)}`);
-    if (fc && thSrc === "gw_p90_proxy") parts.push("P90-proxy threshold");
+    if (fc && thSrc === "q95_proxy") parts.push("Q95-proxy threshold");
+    else if (fc && thSrc === "gw_p90_proxy") parts.push("P90-proxy threshold");
     else if (fc && thSrc === "user") parts.push("against your threshold");
+    if (isFlow) parts.push("gauged flow — includes abstraction & discharge effects");
     const oneLine = parts.join(", ") + ".";
 
     // -- Tier 2a: data confidence --
@@ -202,7 +228,10 @@
     if (dataSrc != null) dataRows += row("Source", esc(dataSrc));
     dataRows += row("Normal built from",
       nYears != null ? `${nYears} years of ${monthName(st.month)} data` : "—");
-    if (st.sgi != null && isFinite(st.sgi))
+    // GW-only: the pack computes the generic normal-scores value for flow
+    // gauges too, but "Standardised Groundwater Index" is a borehole concept —
+    // don't present it on a river's discharge reading.
+    if (!isFlow && st.sgi != null && isFinite(st.sgi))
       dataRows += row("SGI",
         (+st.sgi).toFixed(1) === "-0.0" ? "0.0" : (+st.sgi).toFixed(1));
     const staleExplain = "A normal cadence is a roughly monthly dipped reading; " +
@@ -214,20 +243,36 @@
     let lineageRows = "";
     if (fc) {
       lineageRows += row("Forecast run", prettyDateTime(fcRun));
-      const thBasis = thSrc === "gw_p90_proxy"
+      const thBasis = thSrc === "q95_proxy"
+        ? "Q95 proxy — a climatological reference, not a licence Hands-off-Flow value"
+        : thSrc === "gw_p90_proxy"
         ? "P90 proxy — not an operational threshold"
         : thSrc === "user" ? "Your threshold" : esc(thSrc || "none");
       lineageRows += row("Threshold basis", thBasis);
       if (fc.threshold != null)
-        lineageRows += row("Threshold", `${fmt1(fc.threshold)} mAOD`);
+        lineageRows += row("Threshold", `${fv(fc.threshold)} ${uLabel}`);
       if (fc.stale_days != null)
         lineageRows += row("Seed age", `${fc.stale_days} d`);
-      // Only when the horizon genuinely exceeds 14 d (else p_breach == the
-      // 14-day breach already shown in the forecast section above).
-      if (fc.p_breach != null && fc.horizon_days > 14)
+      if (isFlow) {
+        // Full-horizon read (13-14 d for flow, so this rarely differs from the
+        // headline 14-day figure above — shown anyway for methodology parity
+        // with the GW long-horizon row below).
+        if (fc.p_below_q95 != null && fc.horizon_days > 14)
+          lineageRows += row(`P(flow &lt; Q95, ${fc.horizon_days} d)`, pct(fc.p_below_q95));
+      } else if (fc.p_breach != null && fc.horizon_days > 14) {
+        // Only when the horizon genuinely exceeds 14 d (else p_breach == the
+        // 14-day breach already shown in the forecast section above).
         lineageRows += row(`Breach prob (${fc.horizon_days} d)`, pct(fc.p_breach));
+      }
     }
     const forcingNote = "Forcing: ECMWF ensemble (see About for attribution).";
+    // River-specific caveats (RiverCast) — always visible when fc exists, not
+    // buried behind a spread check like the GW model-disagreement group.
+    const riverCaveat = isFlow
+      ? "Gauged flow — includes abstraction &amp; discharge effects. Rating " +
+        "curves (the stage-to-flow conversion) are least accurate at low " +
+        "flows. Indicative &amp; experimental."
+      : "";
 
     // -- Tier 2c: model disagreement (only when fc && spread present) --
     let spreadRow = "", spreadCaveat = "";
@@ -263,6 +308,10 @@
             ? `<div class="trust-grp"><h4>Model disagreement</h4>${spreadRow}` +
               `<p class="caption">${spreadCaveat}</p></div>`
             : "") +
+          (riverCaveat
+            ? `<div class="trust-grp river-caveat"><h4>Gauged flow</h4>` +
+              `<p class="caption">${riverCaveat}</p></div>`
+            : "") +
         `</div>` +
       `</details>` +
     `</div>`;
@@ -278,20 +327,36 @@
     _curStationName = (detail && detail.station &&
       (detail.station.name || detail.station.station_id)) || "";
     opts = opts || {};
-    const range = ["365", "730", "all"].includes(opts.range) ? opts.range : "365";
+    const range = ["90", "365", "730", "all"].includes(opts.range) ? opts.range : "90";
     const initDays = range === "all" ? 1e9 : parseInt(range, 10);
     const stn = detail.station || {};
     const st = detail.status || {};
     const fr = detail.freshness || {};
     const out = [];
+    // RiverCast (Stage 7): a flow gauge reuses this whole renderer — same
+    // envelope, same chart/fan components — with a handful of branches below
+    // for the flow-specific vocabulary (Q95 not a breach threshold, gauged-flow
+    // caveats, no seasonal/no standalone page yet). isFlow is the ONE
+    // discriminator; unit/uLabel/fv drive every level-shaped number.
+    const isFlow = stn.station_type === "flow";
+    const unit = C.unitOf ? C.unitOf(detail) : "mAOD";
+    const uLabel = C.unitLabel ? C.unitLabel(unit) : "mAOD";
+    const fv = C.fmtOf ? C.fmtOf(unit) : fmt1;
     // On a standalone /b/<slug>/ page the static shell already shows the name,
     // sub-line and a status chip — skip our own to avoid duplication; the ☆
     // watch control moves into the actions row (still inside #detail-body so
     // watchlist.js can bind it). In the map side panel everything is shown.
-    const onBoreholePage = location.pathname.indexOf("/b/") === 0;
+    // Rivers have no standalone page yet (v1 is explorer-only), so a flow
+    // gauge is never "on a borehole page".
+    const onBoreholePage = !isFlow && location.pathname.indexOf("/b/") === 0;
     if (!onBoreholePage) {
       out.push(`<div class="d-head"><h2 class="d-name">${esc(stn.name || stn.station_id)}</h2>${starBtn(stn, detail)}</div>`);
-      out.push(`<p class="d-sub">${esc(stn.aquifer || "—")} · ${fmt1(stn.lat)}°N ${fmt1(stn.lon)}°E</p>`);
+      out.push(isFlow
+        ? `<p class="d-sub">${esc(stn.river_name || "River gauge")} · RiverCast pilot</p>`
+        : `<p class="d-sub">${esc(stn.aquifer || "—")} · ${fmt1(stn.lat)}°N ${fmt1(stn.lon)}°E</p>`);
+      if (isFlow && stn.winterbourne) {
+        out.push(winterbourneChip(stn, st));
+      }
     }
 
     // Share + verify-on-source actions. station_id IS the EA hydrology GUID, so
@@ -299,13 +364,13 @@
     // data?"); Copy link makes the existing #bh deep-link shareable.
     if (stn.station_id) {
       // "Open full page" links to the static per-borehole page (/b/<slug>/) — shown
-      // in the map side panel, hidden when we're already on that page. On the page
-      // the ☆ watch control rides at the front of the actions row instead.
+      // in the map side panel, hidden when we're already on that page or the
+      // station is a flow gauge (no /b/ equivalent exists for rivers yet).
       // Prefer the pack's canonical slug: for duplicate-named stations the stub
       // builder suffixes the slug, so re-deriving it from the name here would
       // link the suffixed twin to the WRONG station's page.
       const pageSlug = stn.slug || slug(stn.name || stn.station_id);
-      const fullPage = onBoreholePage ? "" :
+      const fullPage = (onBoreholePage || isFlow) ? "" :
         `<a class="d-act-btn d-act-primary" href="/b/${pageSlug}/">Open full page ↗</a>`;
       const pageStar = onBoreholePage ? starBtn(stn, detail) : "";
       out.push(`<div class="d-actions">` +
@@ -385,12 +450,16 @@
           `the dashed segment estimates the level from there to today using recent ` +
           `rainfall, then the ${hLabel}-day forecast continues.</p>`);
       }
-      const btns = [["365", "1y"], ["730", "2y"], ["all", "All"]].map(([d, l]) =>
+      const btns = [["90", "90 d"], ["365", "1y"], ["730", "2y"], ["all", "All"]].map(([d, l]) =>
         `<button class="range-btn${d === range ? " active" : ""}" data-days="${d}">${l}</button>`
       ).join("");
       out.push(`<div class="fan-controls"><span class="range-label">History</span>${btns}</div>`);
       out.push(`<div class="fan-host">${C.fanChart(detail, { historyDays: initDays, levels: triggerLevels(detail), large: pageLarge() })}</div>`);
-      out.push(`<p class="caption">Observed history (dark) → ${hLabel}-day P10/P50/P90 forecast fan (blue), continuing as a monthly seasonal outlook — each circle coloured by that month's most-likely tercile (matching the map: amber below / grey near / blue above normal) with P10–P90 whiskers. Red dashed = breach threshold. ${onBoreholePage ? "Hover, or drag the timeline below, for values." : "Hover for values."}</p>`);
+      out.push(isFlow
+        ? `<p class="caption">Observed flow (dark) → ${hLabel}-day P10/P50/P90 forecast fan (blue). ` +
+          `Red dashed = the Q95 low-flow proxy — a climatological reference, not a licence trigger. ` +
+          `Gauged flow, including any abstraction and discharge effects. Hover for values.</p>`
+        : `<p class="caption">Observed history (dark) → ${hLabel}-day P10/P50/P90 forecast fan (blue), continuing as a monthly seasonal outlook — each circle coloured by that month's most-likely tercile (matching the map: amber below / grey near / blue above normal) with P10–P90 whiskers. Red dashed = breach threshold. ${onBoreholePage ? "Hover, or drag the timeline below, for values." : "Hover for values."}</p>`);
       // Standalone page: a draggable timeline scrubber with a live value readout
       // (bindFan wires it to the chart's scrub API). Discoverable + touch-friendly.
       if (onBoreholePage) {
@@ -400,13 +469,28 @@
           `aria-label="Scrub the forecast timeline"></div>` +
           `<div class="fan-readout" role="status" aria-live="polite"></div></div>`);
       }
-      const tier = fc.tier ? `<span class="tier-badge tier-${esc(fc.tier)}">${TIER_LABEL[fc.tier] || fc.tier}</span>` : "–";
-      let metrics = row("Tier", tier) + row("Breach prob (14 d)", pct(fc.p_breach_14d));
+      let metrics;
+      if (isFlow) {
+        // No GW-style tier (BREACH_LIKELY etc.) for rivers — the headline IS
+        // the probability; rain_dependent surfaces the Stage-4 gate's tier
+        // instead (memory-only skill vs leaning on the rain forecast).
+        const dep = fc.rain_dependent
+          ? `<span class="tier-badge tier-RAIN_DEPENDENT" title="Skilful largely because of the rain forecast — wider bands, extra caution">🌧 rain-dependent</span>`
+          : `<span class="tier-badge tier-STABLE" title="Skilful even on climatological rain alone">memory-robust</span>`;
+        metrics = row("Gate", dep) +
+          row("P(flow &lt; Q95, 14 d)", pct(fc.p_below_q95_14d));
+      } else {
+        const tier = fc.tier ? `<span class="tier-badge tier-${esc(fc.tier)}">${TIER_LABEL[fc.tier] || fc.tier}</span>` : "–";
+        metrics = row("Tier", tier) + row("Breach prob (14 d)", pct(fc.p_breach_14d));
+      }
       if (fc.first_cross_median)
-        metrics += row("Median first crossing", prettyDate(fc.first_cross_median));
+        metrics += row(isFlow ? "Median first drop below Q95" : "Median first crossing",
+          prettyDate(fc.first_cross_median));
       // Two-method cross-check chip: the mean Pastas-vs-roll disagreement is
       // already published (model_spread_mean); surface it as agree/diverge —
       // structural DISAGREEMENT between independent engines, never an error bar.
+      // (Flow has no reduced-form roll model, so fc.model_spread_mean is
+      // always absent there and this simply doesn't fire.)
       if (fc.model_spread_mean != null && isFinite(fc.model_spread_mean)) {
         const sp = Math.abs(+fc.model_spread_mean);
         const agree = sp < 0.10 ? ["agree", "two independent methods land within 10 cm"]
@@ -415,13 +499,16 @@
         metrics += row("Cross-check", `<span class="xchk xchk-${agree[0]}" title="${esc(agree[1])}">` +
           (sp < 0.30 ? "methods agree" : "methods diverge") + ` (±${fmt1(sp)} m)</span>`);
       }
-      // Censored-fraction framing: pair the breach probability with how many
-      // sampled scenarios NEVER reach the level in the window (honesty framing
+      // Censored-fraction framing: pair the headline probability with how many
+      // sampled scenarios NEVER cross the level in the window (honesty framing
       // for small probabilities — "0%" means no member crossed, not impossible).
       let censoredNote = "";
       if (fc.threshold != null && fc.censored_frac != null && isFinite(fc.censored_frac)) {
-        censoredNote = `<p class="caption">${pct(fc.censored_frac)} of sampled scenarios ` +
-          `never reach ${fmt1(fc.threshold)} mAOD inside the forecast window.</p>`;
+        censoredNote = isFlow
+          ? `<p class="caption">${pct(fc.censored_frac)} of sampled scenarios never fall ` +
+            `below ${fv(fc.threshold)} ${uLabel} (the Q95 proxy) inside the forecast window.</p>`
+          : `<p class="caption">${pct(fc.censored_frac)} of sampled scenarios ` +
+            `never reach ${fmt1(fc.threshold)} mAOD inside the forecast window.</p>`;
       }
       if (onBoreholePage) {
         out.push(`</div>`);                      // close the fan lead card…
@@ -441,8 +528,11 @@
     // (shown open); a secondary disclosure when the forecast chart leads. --
     if (mrow && st.level != null) {
       const inner = C.ladder(st.level, mrow, st.status || "none") +
-        `<p class="caption">Latest level ${fmt1(st.level)} mAOD against this ` +
-        `borehole's ${monthName(st.month)} normal range.</p>`;
+        (isFlow
+          ? `<p class="caption">Latest flow ${fv(st.level)} ${uLabel} against this ` +
+            `gauge's ${monthName(st.month)} flow climatology.</p>`
+          : `<p class="caption">Latest level ${fmt1(st.level)} mAOD against this ` +
+            `borehole's ${monthName(st.month)} normal range.</p>`);
       out.push(fc
         ? (onBoreholePage ? pageCard("Current level vs normal", inner)
                           : fold("Current level vs normal", inner))
@@ -504,11 +594,31 @@
 
     // -- set your own trigger levels — the ladder (named mAOD levels). Each level
     // now draws a line on the fan chart above (live as you edit) and is read
-    // qualitatively against the fan. Forecast-only; the name-☆ owns watching. --
-    if (fc && window.GWC_LADDER && window.GWC_LADDER.ladderHTML)
+    // qualitatively against the fan. Forecast-only; the name-☆ owns watching.
+    // GW-only for now — the watchlist/ladder machinery is built around mAOD
+    // breach semantics; a flow-native trigger-level editor is future work. --
+    if (!isFlow && fc && window.GWC_LADDER && window.GWC_LADDER.ladderHTML)
       out.push(onBoreholePage
         ? pageCard("Set your own trigger levels", window.GWC_LADDER.ladderHTML(stn, detail))
         : fold("Set your own trigger levels", window.GWC_LADDER.ladderHTML(stn, detail)));
+
+    // -- "Groundwater feeding this river" (RiverCast) — the boreholes whose
+    // station_links.csv row names this gauge, inverted at pack build. Lazy:
+    // each borehole's OWN already-published detail JSON is fetched after
+    // render (bindLinkedBoreholes) so this stays a cheap synchronous render
+    // here; carries no new model claim, just links + each borehole's
+    // existing status chip / seasonal one-liner.
+    if (isFlow && Array.isArray(stn.linked_boreholes) && stn.linked_boreholes.length) {
+      const rows = stn.linked_boreholes.map((sid) =>
+        `<div class="linked-bh" data-linked-id="${esc(sid)}"><span class="caption">Loading…</span></div>`
+      ).join("");
+      const inner = `<div class="linked-bh-list">${rows}</div>` +
+        `<p class="caption">Groundwater feeding this river, from each borehole's own ` +
+        `published forecast — no new model here.</p>`;
+      out.push(onBoreholePage
+        ? pageCard("Groundwater feeding this river", inner)
+        : `<div class="d-section"><h3>Groundwater feeding this river</h3>${inner}</div>`);
+    }
 
     // -- consolidated data & downloads (1.3) — every series behind the charts
     // above, in one place rather than a drawer scattered under each chart. Each
@@ -518,11 +628,11 @@
     const dataBlocks = [
       dataDisclosure("normals", "Monthly normal ranges", NORM_COLS, detail.normals || []),
       fc ? dataDisclosure("fan", `Forecast fan (${hLabel}-day P10/P50/P90)`,
-                          FAN_COLS, fc.fan || []) : "",
+                          isFlow ? flowFanCols(uLabel) : FAN_COLS, fc.fan || []) : "",
       (detail.observed && detail.observed.series)
         ? dataDisclosure("observed",
-            "Observed levels (" + (detail.observed.unit || "mAOD") + ")",
-            OBS_COLS, detail.observed.series, { lazy: true }) : "",
+            "Observed " + (isFlow ? "flow" : "levels") + " (" + (detail.observed.unit || "mAOD") + ")",
+            isFlow ? flowObsCols() : OBS_COLS, detail.observed.series, { lazy: true }) : "",
       (se && se.months)
         ? dataDisclosure("seasonal", "Seasonal outlook (months 1–6)", SEAS_COLS, se.months) : "",
     ].filter(Boolean);
@@ -562,19 +672,27 @@
     const st = detail.status || {};
     const fc = detail.forecast;
     const se = detail.seasonal;
+    const isFlow = detail.station && detail.station.station_type === "flow";
+    const noun = isFlow ? "this river gauge" : "this borehole";
     const bits = [];
     if (st.status) {
       const pctTxt = (st.percentile != null && isFinite(st.percentile))
         ? ` (around the ${ordinal(st.percentile)} percentile)` : "";
       const trend = { rising: " and rising", falling: " and falling",
         stable: " and holding steady" }[st.trend] || "";
-      bits.push(`this borehole is <b>${STATUS_LABEL[st.status]}</b> for ` +
+      bits.push(`${noun} is <b>${STATUS_LABEL[st.status]}</b> for ` +
         `${monthName(st.month)}${pctTxt}${trend}`);
     } else {
-      bits.push("there's no recent enough reading to place this borehole " +
+      bits.push(`there's no recent enough reading to place ${noun} ` +
         "against its normal range");
     }
-    if (fc && fc.p_breach_14d != null && isFinite(fc.p_breach_14d)) {
+    if (isFlow && fc && fc.p_below_q95_14d != null && isFinite(fc.p_below_q95_14d)) {
+      const p = fc.p_below_q95_14d;
+      const phrase = p < 0.01 ? "looks very unlikely"
+        : p > 0.5 ? "looks likely"
+          : `is around ${pct(p)}`;
+      bits.push(`the chance of falling below its Q95 low-flow proxy in the next 14 days ${phrase}`);
+    } else if (fc && fc.p_breach_14d != null && isFinite(fc.p_breach_14d)) {
       const p = fc.p_breach_14d;
       const phrase = p < 0.01 ? "looks very unlikely"
         : p > 0.5 ? "looks likely"
@@ -601,7 +719,7 @@
       : bits.slice(0, -1).join("; ") + "; and " + bits[bits.length - 1];
     const sentence = joined.charAt(0).toUpperCase() + joined.slice(1);
     return `<p class="plain-lang"><span class="pl-tag">In plain terms</span> ` +
-      `${sentence}. <span class="pl-caveat">Indicative only — not a flood warning.</span></p>`;
+      `${sentence}. <span class="pl-caveat">Indicative only — not a flood or drought warning.</span></p>`;
   }
 
   // -- column definitions (1.3). Each col: {key,label,get(row),type,fmt}. The
@@ -617,6 +735,24 @@
     { key: "roll_p50", label: "Roll P50", type: "num", get: (r) => r.roll_p50, fmt: fmt3 },
     { key: "model_spread", label: "Model spread", type: "num", get: (r) => r.model_spread, fmt: fmt3 },
   ];
+  // RiverCast fan/observed columns: unit-aware labels, no roll_p50/model_spread
+  // (flow has no reduced-form cross-check model — see FLOW_FAN_KEY_MAP).
+  function flowFanCols(uLabel) {
+    return [
+      { key: "lead", label: "Lead (days)", type: "num", get: (r) => r.lead, fmt: (v) => v },
+      { key: "date", label: "Date", type: "date", get: (r) => r.date, fmt: prettyDate },
+      { key: "segment", label: "Segment", type: "str", get: (r) => r.segment, fmt: (v) => v },
+      { key: "p10", label: `P10 (${uLabel})`, type: "num", get: (r) => r.p10, fmt: fmt3 },
+      { key: "p50", label: `P50 (${uLabel})`, type: "num", get: (r) => r.p50, fmt: fmt3 },
+      { key: "p90", label: `P90 (${uLabel})`, type: "num", get: (r) => r.p90, fmt: fmt3 },
+    ];
+  }
+  function flowObsCols() {
+    return [
+      { key: "date", label: "Date", type: "date", get: (r) => r[0], fmt: prettyDate },
+      { key: "level", label: "Flow (m³/s)", type: "num", get: (r) => r[1], fmt: fmt3 },
+    ];
+  }
   const SEAS_COLS = [
     { key: "month_ahead", label: "Month", type: "num", get: (r) => r.month_ahead, fmt: (v) => v },
     { key: "month_start", label: "Start", type: "date", get: (r) => r.month_start, fmt: prettyDate },
@@ -874,7 +1010,7 @@
     const initBtn = container.querySelector(".range-btn.active");
     let activeDays = initBtn
       ? (initBtn.dataset.days === "all" ? 1e9 : parseInt(initBtn.dataset.days, 10))
-      : 365;
+      : 90;
     let api = null;
 
     // The scrubber spans the forecast portion only: today (origin / first fan
@@ -934,8 +1070,50 @@
     _fanRedraw = () => draw(activeDays);
   }
 
+  // -- "Groundwater feeding this river" (RiverCast) — lazy-fetch each linked
+  // borehole's OWN already-published detail JSON and show its status chip
+  // plus, if it has a seasonal outlook, one qualitative line. No new model:
+  // pure reuse of numbers that are already computed and already published
+  // for that borehole, carrying that borehole's own existing caveats.
+  function seasonalQualLine(seasonal) {
+    if (!seasonal || !seasonal.months || !seasonal.months.length) return "";
+    const qual = { below: "likely below normal", near: "likely near normal",
+      above: "likely above normal" };
+    const m = seasonal.months[seasonal.months.length - 1];   // furthest month = "into <season>"
+    const probs = { below: m.p_below, near: m.p_near, above: m.p_above };
+    let lean = null, best = -1;
+    for (const k in probs) {
+      if (probs[k] != null && isFinite(probs[k]) && probs[k] > best) { best = probs[k]; lean = k; }
+    }
+    if (!lean) return "";
+    const when = m.month_start
+      ? monthName(new Date(m.month_start + "T00:00:00Z").getUTCMonth() + 1) : "the coming months";
+    return `Groundwater feeding this river is ${qual[lean]} into ${esc(when)}.`;
+  }
+  function bindLinkedBoreholes(container) {
+    if (!container) return;
+    const nodes = container.querySelectorAll(".linked-bh[data-linked-id]");
+    if (!nodes.length) return;
+    const packBase = (window.GWC_CONFIG && window.GWC_CONFIG.packBase) || "/pack";
+    nodes.forEach((el) => {
+      const id = el.dataset.linkedId;
+      fetch(`${packBase}/stations/${id}.json`)
+        .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+        .then((d) => {
+          const stn = d.station || {};
+          const href = "/b/" + (stn.slug || slug(stn.name || id)) + "/";
+          const qual = seasonalQualLine(d.seasonal);
+          el.innerHTML = `<a class="linked-bh-link" href="${esc(href)}">${esc(stn.name || id)}</a> ` +
+            statusChip(d.status) + (qual ? `<p class="caption">${qual}</p>` : "");
+        })
+        .catch(() => {
+          el.innerHTML = `<span class="caption">Borehole detail unavailable.</span>`;
+        });
+    });
+  }
+
   window.GWC_DETAIL = {
-    render, bindFan, bindData, bindActions,
+    render, bindFan, bindData, bindActions, bindLinkedBoreholes,
     refreshFanLevels: () => { if (_fanRedraw) _fanRedraw(); },
   };
 })();

@@ -7,6 +7,7 @@ injected ``now`` so reruns are byte-identical.
 """
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 from pathlib import Path
@@ -99,6 +100,98 @@ def _trend_flags():
     }])
 
 
+def _fan_archive():
+    """Three archived runs for A: an old closed one, the NEWEST closed one
+    (2026-05-20, window ends 06-02 < FIXED_NOW), and an unclosed one whose
+    window (06-08 → 06-21) straddles FIXED_NOW. Bands bracket the shard's
+    ~50.49 level so every scored day lands in-band."""
+    rows = []
+
+    def _run(run, start):
+        for i, d in enumerate(pd.date_range(start, periods=14, freq="D"), 1):
+            rows.append({"station_id": "A", "run": pd.Timestamp(run),
+                         "lead": i, "date": d,
+                         "gw_p10": 50.0, "gw_p50": 50.5, "gw_p90": 51.0,
+                         "roll_p50": np.nan, "model_spread": np.nan,
+                         "segment": "forecast"})
+
+    _run("2026-05-10T07:00:00Z", "2026-05-10")
+    _run("2026-05-20T07:00:00Z", "2026-05-20")
+    _run("2026-06-08T07:00:00Z", "2026-06-08")
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
+# RiverCast (flow) fixtures — Stage 7. "F1" is a winterbourne (dry every
+# August) fed, per station_links.csv, by GW borehole "A" (the linked_boreholes
+# inversion target). Seven years of daily record so gw_monthly_normals' "drop
+# the in-progress calendar month" guard (real wall-clock, not FIXED_NOW) can
+# never starve a month below MIN_YEARS=5.
+# ---------------------------------------------------------------------------
+FLOW_RUN = pd.Timestamp("2026-06-12T22:00:00+00:00")
+
+
+def _flow_shard(dirpath, gid: str, end="2026-06-10", years: int = 7):
+    idx = pd.date_range(end=end, periods=365 * years + 2, freq="D")
+    doy = idx.dayofyear.to_numpy()
+    base = 0.35 + 0.25 * np.cos(2 * np.pi * (doy - 30) / 365.0)
+    vals = np.clip(base, 0.02, None)
+    dry = (idx.month == 8) & (idx.day <= 15)             # dry every August
+    vals = np.where(dry, 0.0, vals)
+    df = pd.DataFrame({"date": idx, "Flow_m3s": vals,
+                       "data_source": "flow_logged"})
+    df.to_parquet(dirpath / f"{gid}.parquet", index=False)
+
+
+def _flow_catalogue():
+    return pd.DataFrame({
+        "station_id": ["F1"], "station_name": ["Test Winterbourne"],
+        "lat": [51.05], "lon": [-1.05], "river_name": ["Test Brook"],
+        "catchment_name": ["Test"], "flow_measure_id": ["F1-flow-m-86400-m3s-qualified"],
+        "record_start": ["2019-06-11"],
+    })
+
+
+def _flow_summary():
+    return pd.DataFrame([{
+        "gauge_id": "F1", "run": FLOW_RUN, "origin_date": "2026-06-10",
+        "stale_days": 2, "horizon_days": 14, "q95_m3s": 0.05,
+        "threshold_source": "q95_proxy",
+        "p_below_q95": 0.234, "p_below_q95_14d": 0.234,
+        "first_cross_median": "2026-06-20", "first_cross_p25": "2026-06-17",
+        "first_cross_p75": "2026-06-25", "first_cross_median_lead": 8.0,
+        "censored_frac": 0.55, "q_p50_end_m3s": 0.312,
+        "n_members": 51, "n_samples": 4000,
+        "headline": "23% chance of falling below the Q95 low-flow proxy.",
+    }])
+
+
+def _flow_fan():
+    rows = []
+    for lead in range(1, 4):
+        rows.append({"gauge_id": "F1", "run": FLOW_RUN, "lead": lead,
+                     "date": pd.Timestamp("2026-06-10") + pd.Timedelta(days=lead),
+                     "q_p10_m3s": 0.111, "q_p50_m3s": 0.222, "q_p90_m3s": 0.333,
+                     "segment": "forecast"})
+    return pd.DataFrame(rows)
+
+
+def _flow_gate():
+    return pd.DataFrame([{
+        "gauge_id": "F1", "station_name": "Test Winterbourne",
+        "gate_pass": True, "tier": "tier1", "rain_dependent": False,
+    }])
+
+
+def _station_links_flow():
+    # RiverFlowMeasureID uses the EA *instantaneous* suffix; the leading GUID
+    # ("F1") is shared with the flow catalogue's *daily-mean* measure id.
+    return pd.DataFrame([{
+        "GWStationID": "A", "GWMeasureID": "A-gw-logged-i-subdaily-mAOD-qualified",
+        "RiverFlowMeasureID": "F1-flow-i-900-m3s-qualified", "RiverFlowDist": 1.2,
+    }])
+
+
 @pytest.fixture
 def inputs(tmp_path):
     shard_dir = tmp_path / "shards"
@@ -116,6 +209,7 @@ def inputs(tmp_path):
     return PackInputs(
         catalogue=_catalogue(), shard_dir=shard_dir, freshness=fresh,
         normals=_normals(), pastas_summary=_summary(), pastas_fan=_fan(),
+        pastas_fan_archive=_fan_archive(),
         seasonal=_seasonal(), trend_flags=_trend_flags(),
         excluded_ids=frozenset({"C"}),
         pinned_ids=frozenset({"A"}), region_name="Testshire",
@@ -126,6 +220,19 @@ def _build(inputs, tmp_path, **kw):
     out = tmp_path / "pack"
     meta = build_pack(inputs, out, now=FIXED_NOW, **kw)
     return out, meta
+
+
+@pytest.fixture
+def flow_inputs(inputs, tmp_path):
+    """``inputs`` (GW fixture, unchanged) plus a full RiverCast input set:
+    one gauge (F1, a winterbourne) with a fan, linked to GW borehole "A"."""
+    flow_shard_dir = tmp_path / "flow_shards"
+    flow_shard_dir.mkdir()
+    _flow_shard(flow_shard_dir, "F1")
+    return dataclasses.replace(
+        inputs, flow_catalogue=_flow_catalogue(), flow_shard_dir=flow_shard_dir,
+        flow_summary=_flow_summary(), flow_fan=_flow_fan(),
+        flow_gate=_flow_gate(), station_links=_station_links_flow())
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +256,8 @@ def test_meta_schema(inputs, tmp_path):
     assert meta["generated_at"] == FIXED_NOW
     assert meta["region"] == "Testshire"
     assert meta["counts"] == {"stations": 2, "with_forecast": 1,
-                              "with_seasonal": 1, "excluded": 1, "no_data": 0}
+                              "with_seasonal": 1, "excluded": 1, "no_data": 0,
+                              "flow_gauges": 0, "flow_with_forecast": 0}
     # coverage audit block (additive; live_capable is None when not supplied)
     assert meta["coverage"] == {"catalogued": 3, "observed": 2, "with_forecast": 1,
                                 "no_data": 0, "excluded": 1, "live_capable": None}
@@ -197,6 +305,7 @@ def test_geojson_validity(inputs, tmp_path):
     assert a["has_forecast"] is True and a["tier"] in (
         "BREACH_LIKELY", "BREACH_POSSIBLE", "WATCH", "STABLE")
     assert a["is_pinned"] is True
+    assert a["short_record"] is False                      # full-record fixture
     assert a["has_trend_flag"] is True and a["trend_severity"] == "high"
     # status computed against the normals ladder
     assert a["status"] in ("below", "near", "above")
@@ -216,6 +325,7 @@ def test_detail_in_scope_schema(inputs, tmp_path):
     fc = d["forecast"]
     assert set(fc) == set(C.DETAIL_FORECAST_KEYS)
     assert fc["is_pinned"] is True and fc["threshold_source"] == "user"
+    assert fc["short_record"] is False
     assert fc["run"] == "2026-06-12T17:00:00Z"
     assert fc["first_cross_p25"] is None                   # NaN -> null
     # fan rows: renamed keys per FAN_KEY_MAP + lead/date
@@ -231,6 +341,85 @@ def test_detail_in_scope_schema(inputs, tmp_path):
     assert set(tf) == set(C.TREND_FLAG_KEYS)
     assert tf["severity"] == "high" and tf["provenance_class"] == "artifact_like"
     assert tf["slope_sen_m_yr"] == 0.701 and tf["rain_corr"] == 0.12  # 3dp / 2dp
+
+
+def test_seasonal_guard_nulls_stale_anchor(inputs, tmp_path):
+    """The 2026-07-09 bug: outlooks seeded at months-old observations were
+    served under a current run stamp. A stale anchor now publishes as null."""
+    stale = _seasonal()
+    stale["origin_date"] = "2026-02-01"            # >60 d before FIXED_NOW
+    out, _ = _build(dataclasses.replace(inputs, seasonal=stale), tmp_path)
+    d = json.loads((out / "stations" / "A.json").read_text(encoding="utf-8"))
+    assert d["seasonal"] is None
+    meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    assert meta["counts"]["with_seasonal"] == 0    # the count is honest too
+
+
+def test_meta_seasonal_origin_uses_dominant_cohort(inputs, tmp_path):
+    """A mixed-origin archive (stale per-borehole seeds alongside the fresh
+    fleet cohort) must stamp meta.runs.seasonal.origin_date with the DOMINANT
+    origin, not whatever row sorts first (the 2026-07 mixed-run bug: iloc[0]
+    published 2026-03-05 for a July run)."""
+    stale = _seasonal().iloc[:1].copy()
+    stale["station_id"] = "Z"
+    stale["origin_date"] = "2026-03-05"
+    mixed = pd.concat([stale, _seasonal()], ignore_index=True)  # stale first
+    _, meta = _build(dataclasses.replace(inputs, seasonal=mixed), tmp_path)
+    assert meta["runs"]["seasonal"]["origin_date"] == "2026-06-12"
+
+
+def test_seasonal_guard_drops_past_months_keeps_current(inputs, tmp_path):
+    """Months already over are dropped (an outlook for the past is not an
+    outlook); the month in progress and future months stay."""
+    se = _seasonal()
+    # relative to FIXED_NOW (2026-06-12): two past months, current, three future
+    se["month_start"] = ["2026-04-01", "2026-05-01", "2026-06-01",
+                         "2026-07-01", "2026-08-01", "2026-09-01"]
+    out, _ = _build(dataclasses.replace(inputs, seasonal=se), tmp_path)
+    d = json.loads((out / "stations" / "A.json").read_text(encoding="utf-8"))
+    got = [m["month_start"] for m in d["seasonal"]["months"]]
+    assert got == ["2026-06-01", "2026-07-01", "2026-08-01", "2026-09-01"]
+
+
+def test_verification_picks_newest_closed_run(inputs, tmp_path):
+    """The verification block scores the NEWEST archived run whose window has
+    fully closed — never the still-open one — against the observed series."""
+    out, _ = _build(inputs, tmp_path)
+    d = json.loads((out / "stations" / "A.json").read_text(encoding="utf-8"))
+    v = d["verification"]
+    assert v is not None
+    assert set(v) == set(C.VERIFICATION_KEYS)
+    assert v["run"].startswith("2026-05-20")          # newest CLOSED, not 06-08
+    assert v["horizon_days"] == 14
+    assert v["n_obs"] == 14                            # shard covers the window
+    assert v["n_in_band"] == 14                        # 50.0–51.0 brackets ~50.49
+    assert 0.0 <= v["mae_p50"] <= 0.02                 # P50 50.5 vs obs ~50.49
+    assert len(v["fan"]) == 14
+    assert set(v["fan"][0]) == set(C.VERIFY_FAN_KEYS)
+    assert v["origin_date"] == "2026-05-19"
+
+
+def test_verification_null_without_archive_or_obs(inputs, tmp_path):
+    """No archive → null everywhere; a station absent from the archive (B) →
+    null even when the archive input exists."""
+    out, _ = _build(inputs, tmp_path)
+    b = json.loads((out / "stations" / "B.json").read_text(encoding="utf-8"))
+    assert b["verification"] is None                   # B has no archived runs
+    bare = dataclasses.replace(inputs, pastas_fan_archive=None)
+    out2 = tmp_path / "pack_noarch"
+    build_pack(bare, out2, now=FIXED_NOW)
+    a = json.loads((out2 / "stations" / "A.json").read_text(encoding="utf-8"))
+    assert a["verification"] is None
+
+
+def test_forecast_block_short_record_flag():
+    """_forecast_block lifts the summary's short_record flag into the JSON block
+    (drives the borehole-page 'provisional' badge); absent → False."""
+    from src.publish.pack import _forecast_block
+    on = _forecast_block(pd.Series({"tier": "STABLE", "short_record": True}), None)
+    off = _forecast_block(pd.Series({"tier": "STABLE"}), None)
+    assert on["short_record"] is True
+    assert off["short_record"] is False
 
 
 def test_detail_status_only(inputs, tmp_path):
@@ -421,7 +610,11 @@ def test_contract_doc_in_sync():
                 | set(C.SUMMARY_COL_SOURCES)
                 | set(C.FAN_KEY_MAP.values()) | set(C.FAN_EXTRA_KEYS)
                 | set(C.SEASONAL_MONTH_KEYS)
-                | set(C.NORMALS_ROW_KEYS) | set(C.TREND_FLAG_KEYS))
+                | set(C.NORMALS_ROW_KEYS) | set(C.TREND_FLAG_KEYS)
+                # RiverCast (Stage 7)
+                | set(C.GEOJSON_TYPE_PROPS) | set(C.GEOJSON_FLOW_PROPS)
+                | set(C.FLOW_STATION_KEYS) | set(C.FLOW_SUMMARY_COL_SOURCES)
+                | set(C.FLOW_FAN_KEY_MAP.values()))
     undocumented = sorted(k for k in all_keys if f"`{k}`" not in text)
     assert not undocumented, f"keys missing from artifact_contract.md: {undocumented}"
 
@@ -497,6 +690,136 @@ def test_frame_days_use_real_seasonal_month_starts(inputs, tmp_path):
     m1 = days[frames.index("Month 1")]
     assert m1 == 33
     assert all(b > a for a, b in zip(days, days[1:]))   # strictly increasing
+
+
+# ---------------------------------------------------------------------------
+# RiverCast (flow gauges) — Stage 7.
+# ---------------------------------------------------------------------------
+
+def test_flow_summary_cols_pinned():
+    from src.forecast.pastas.flow_summary import SUMMARY_COLS as FLOW_SUMMARY_COLS
+    missing = [c for c in C.FLOW_SUMMARY_COL_SOURCES.values()
+               if c not in FLOW_SUMMARY_COLS]
+    assert not missing, f"contract references absent flow SUMMARY_COLS: {missing}"
+
+
+def test_flow_fan_cols_pinned():
+    from src.forecast.pastas.flow_summary import FAN_COLS as FLOW_FAN_COLS
+    missing = [c for c in C.FLOW_FAN_KEY_MAP if c not in FLOW_FAN_COLS]
+    assert not missing, f"contract references absent flow FAN_COLS: {missing}"
+
+
+def test_pack_without_flow_inputs_unchanged(inputs, tmp_path):
+    """The GW-only fixture (no flow_* fields set) must build BYTE-IDENTICAL
+    meta/geojson content to before RiverCast existed — the graceful-degrade
+    contract (docs §6): zero flow stations, no station_type anywhere."""
+    out, meta = _build(inputs, tmp_path)
+    assert meta["counts"]["flow_gauges"] == 0
+    assert meta["counts"]["flow_with_forecast"] == 0
+    assert meta["counts"]["stations"] == 2               # unchanged: A, B
+    assert "river_disclaimer" in meta                     # always present (static line)
+    gj = json.loads((out / "stations.geojson").read_text(encoding="utf-8"))
+    assert len(gj["features"]) == 2
+    for f in gj["features"]:
+        assert "station_type" not in f["properties"]
+    idx = json.loads((out / "stations" / "index.json").read_text(encoding="utf-8"))
+    for row in idx:
+        assert "station_type" not in row
+
+
+def test_flow_gauge_publishes_feature_and_detail(flow_inputs, tmp_path):
+    out, meta = _build(flow_inputs, tmp_path)
+    assert meta["counts"]["flow_gauges"] == 1
+    assert meta["counts"]["flow_with_forecast"] == 1
+    # GW-only counters are untouched by the flow gauge joining the pack
+    assert meta["counts"]["stations"] == 2
+    assert meta["coverage"]["observed"] == 2
+
+    gj = json.loads((out / "stations.geojson").read_text(encoding="utf-8"))
+    by_id = {f["properties"]["station_id"]: f for f in gj["features"]}
+    assert set(by_id) == {"A", "B", "F1"}
+    flow_props = by_id["F1"]["properties"]
+    assert flow_props["station_type"] == "flow"
+    assert flow_props["river_name"] == "Test Brook"
+    assert flow_props["rain_dependent"] is False
+    assert flow_props["has_forecast"] is True
+    assert flow_props["status"] in ("below", "near", "above", None)
+    # GW features are BYTE-shape unchanged: still no station_type key at all
+    assert "station_type" not in by_id["A"]["properties"]
+    assert "station_type" not in by_id["B"]["properties"]
+
+    idx = json.loads((out / "stations" / "index.json").read_text(encoding="utf-8"))
+    f1_row = next(r for r in idx if r["station_id"] == "F1")
+    assert f1_row["station_type"] == "flow"
+    a_row = next(r for r in idx if r["station_id"] == "A")
+    assert "station_type" not in a_row
+
+    d = json.loads((out / "stations" / "F1.json").read_text(encoding="utf-8"))
+    assert d["schema_version"] == C.SCHEMA_VERSION
+    assert d["station"]["station_type"] == "flow"
+    assert d["station"]["river_name"] == "Test Brook"
+    assert d["station"]["linked_boreholes"] == ["A"]        # inverted from station_links
+    assert d["station"]["winterbourne"] is True
+    assert d["station"]["dry_months"] == [8]
+    assert d["observed"]["unit"] == "m3/s"
+    assert len(d["observed"]["series"]) > 0
+    assert d["seasonal"] is None and d["trend_flag"] is None and d["verification"] is None
+
+    fc = d["forecast"]
+    assert fc is not None
+    assert set(fc) == set(C.DETAIL_FLOW_FORECAST_KEYS)
+    assert fc["threshold"] == 0.05                          # q95_m3s, 3dp
+    assert fc["threshold_source"] == "q95_proxy"
+    assert fc["p_below_q95_14d"] == 0.234
+    assert fc["rain_dependent"] is False
+    assert len(fc["fan"]) == 3
+    assert set(fc["fan"][0]) == {"lead", "date", "segment", *C.FLOW_FAN_KEY_MAP.values()}
+    assert fc["fan"][0]["p50"] == 0.222
+
+
+def test_flow_gauge_without_fan_does_not_publish(flow_inputs, tmp_path):
+    """Launch scope: a flow gauge with a summary row but NO fan rows must not
+    appear at all (no status-only tier for rivers in v1)."""
+    empty_fan = dataclasses.replace(flow_inputs, flow_fan=_flow_fan().iloc[0:0])
+    out, meta = _build(empty_fan, tmp_path)
+    assert meta["counts"]["flow_gauges"] == 0
+    assert not (out / "stations" / "F1.json").exists()
+
+
+def test_flow_rain_dependent_true_when_gated(flow_inputs, tmp_path):
+    dep = _flow_gate()
+    dep.loc[0, "rain_dependent"] = True
+    out, _ = _build(dataclasses.replace(flow_inputs, flow_gate=dep), tmp_path)
+    d = json.loads((out / "stations" / "F1.json").read_text(encoding="utf-8"))
+    assert d["forecast"]["rain_dependent"] is True
+    gj = json.loads((out / "stations.geojson").read_text(encoding="utf-8"))
+    f1 = next(f["properties"] for f in gj["features"] if f["properties"]["station_id"] == "F1")
+    assert f1["rain_dependent"] is True
+
+
+def test_flow_linked_boreholes_empty_when_no_link(flow_inputs, tmp_path):
+    out, _ = _build(dataclasses.replace(flow_inputs, station_links=None), tmp_path)
+    d = json.loads((out / "stations" / "F1.json").read_text(encoding="utf-8"))
+    assert d["station"]["linked_boreholes"] == []
+
+
+def test_flow_gauge_no_catalogue_row_skipped(flow_inputs, tmp_path):
+    bad = dataclasses.replace(flow_inputs, flow_catalogue=_flow_catalogue().iloc[0:0])
+    out, meta = _build(bad, tmp_path)
+    assert meta["counts"]["flow_gauges"] == 0
+
+
+def test_river_disclaimer_wording(flow_inputs, tmp_path):
+    out, meta = _build(flow_inputs, tmp_path)
+    rd = meta["river_disclaimer"]
+    assert "gauged flow, including any abstraction and discharge effects" in rd
+
+
+def test_national_history_excludes_flow(flow_inputs, tmp_path):
+    out, _ = _build(flow_inputs, tmp_path)
+    hist = json.loads((out / "national_history.json").read_text(encoding="utf-8"))
+    row = hist[-1]
+    assert row["stations"] == 2                            # F1 not counted
 
 
 def test_frame_days_ignore_stale_origin_cohort():

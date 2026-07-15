@@ -4,6 +4,13 @@ Ties the chain together: provider members → bias-correct (f_bh) → bridge wit
 observed gauge rainfall → Weibull recharge → reduced-form GW roll. Writes
 `data/model/forecast_ensemble_members.parquet` and prints a per-pilot GW fan.
 
+Also emits the low-flow Rivers pilot's ENS bridge
+(`data/model/flow_ens_members.parquet`, see ``build_flow_ens_bridge``) from
+the same decoded cycle — the on-disk artifact that carries the ENS member
+forcing across the venv boundary to the pastas-env ``build_flow_members``
+stage, exactly as the GW members parquet does for ``build_pastas_members``.
+Skipped harmlessly when the low-flow pilot isn't set up on this host.
+
 Network: one ensemble fetch + one reanalysis (bias) fetch per pilot. The
 --provider default resolves config `forecast.ensemble.provider` (production:
 ecmwf_opendata), then `dev_provider`, then "open_meteo". If the config-default
@@ -32,6 +39,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 import numpy as np
 import pandas as pd
 
+from src.download.flow import resolve_flow_pilot_path
 from src.features.io import load_features
 from src.features.build import compute_weibull_kernel
 from src.forecast.ensemble import get_provider
@@ -43,21 +51,27 @@ CONFIG = Path("config/config.json")
 CATALOGUE = Path("data/processed/catalogue.csv")
 LINKS = Path("data/processed/station_links.csv")
 OUT_PARQUET = Path("data/model/forecast_ensemble_members.parquet")
+FLOW_PILOT = Path("data/processed/flow_pilot.csv")
+FLOW_CATALOGUE = Path("data/processed/flow_catalogue.csv")
 
 
-def _select_pilots(history_counts, coords, links, n, scope):
+def _select_pilots(history_counts, coords, links, n, scope, include_short=False):
     """Boreholes to forecast, requiring coords + rain links + history.
 
     scope='user'     → boreholes with a user-supplied breach threshold.
     scope='live'     → live-feed + calibratable boreholes ∪ user set (default).
     scope='fleet'    → all calibratable boreholes ∪ user set.
     scope='coverage' → top stations by history coverage (legacy quick set).
+    ``include_short`` also fetches members for the short-record fan candidates,
+    so their gated Pastas models (build_pastas_models) have members to drive —
+    both stages must resolve the SAME set or short-record boreholes silently
+    drop out of build_pastas_members.
     All require coords + rain links + history; `n` caps the count (0 = no cap).
     """
     have = lambda sid: sid in coords.index and sid in links.index
     if scope in ("user", "live", "fleet"):
         from src.forecast.ensemble.scope import select_scope
-        want = select_scope(scope)
+        want = select_scope(scope, include_short=include_short)
         ranked = [sid for sid in history_counts.index if sid in want and have(sid)]
     else:                                       # 'coverage' = legacy top-N
         ranked = [sid for sid in history_counts.index if have(sid)]
@@ -85,6 +99,110 @@ def _dev_fallback(ens, name, exc, cache_root):
           f"\n! to restore it (or pass --provider explicitly to force an error)."
           f"\n{bang}")
     return get_provider(dev, cache_root=cache_root)
+
+
+def build_flow_ens_bridge(provider, cfg, *,
+                          pilot_path: Path = FLOW_PILOT,
+                          catalogue_path: Path = FLOW_CATALOGUE,
+                          out_path: Path | None = None) -> pd.DataFrame | None:
+    """Emit the on-disk ENS bridge for the low-flow Rivers pilot gauges —
+    ``data/model/flow_ens_members.parquet`` (build_plan.md Stage 6).
+
+    Why here and not in the flow stage itself: ``build_flow_members`` (8h-flow)
+    runs in PASTAS_ENV, which has no GRIB stack — a ``get_provider`` call there
+    can never reach ``ecmwf_opendata`` and would silently fall through to
+    Open-Meteo, whose free tier is non-commercial (the exact licensing landmine
+    the June free-data migration exists to avoid) and which breaks the "fully
+    open ECMWF" claim. So the ENS crosses the venv boundary the same way it
+    does for GW: THIS main-env stage fetches once (the decoded UK grid for
+    today's cycle is already cached in-process on ``provider`` from the GW
+    borehole loop above, so each gauge is a near-zero-cost point lookup) and
+    writes an on-disk artifact; the pastas-env stage reads only the artifact.
+
+    Schema mirrors the GW members parquet's forcing columns:
+    ``[gauge_id, member, date, precip_mm]`` + a ``provider`` provenance
+    categorical (the GW parquet's ``station_id`` becomes ``gauge_id``; no
+    ``f_bh`` bias correction is applied to flow — out of Stage-6 scope,
+    flagged in the build plan review).
+
+    Optional subsystem, never fatal: a missing pilot CSV / catalogue (host
+    without the low-flow build) or zero fetchable gauges returns None with a
+    log line — the GW members this stage exists for are untouched. Per-gauge
+    fetch failures degrade to a skipped gauge, same retry discipline as the
+    borehole loop.
+
+    Returns the written frame, or None when skipped/nothing written.
+    """
+    ens = cfg.get("forecast", {}).get("ensemble", {})
+    fcfg = ens.get("flow", {})
+    if not fcfg.get("enabled", True):
+        print("flow ENS bridge: forecast.ensemble.flow.enabled = false — skipped")
+        return None
+    pilot_path = Path(pilot_path)
+    catalogue_path = Path(catalogue_path)
+    if not pilot_path.exists():
+        print(f"flow ENS bridge: {pilot_path} not found — skipped (run "
+              f"'python -m scripts.select_flow_pilot' to enable it on this host).")
+        return None
+    if not catalogue_path.exists():
+        print(f"flow ENS bridge: {catalogue_path} not found — skipped.")
+        return None
+
+    pilot = pd.read_csv(pilot_path, dtype={"gauge_id": str})
+    if pilot.empty:
+        print(f"flow ENS bridge: {pilot_path} is empty — skipped.")
+        return None
+    cat = (pd.read_csv(catalogue_path, dtype={"station_id": str})
+           .dropna(subset=["lat", "lon"])
+           .drop_duplicates("station_id").set_index("station_id"))
+    horizon = int(fcfg.get("window_days", 14))
+
+    frames, skipped = [], []
+    for gauge_id in sorted(pilot["gauge_id"]):
+        if gauge_id not in cat.index:
+            skipped.append((gauge_id, "no catalogue row/coords"))
+            continue
+        lat = float(cat.loc[gauge_id, "lat"])
+        lon = float(cat.loc[gauge_id, "lon"])
+        members = None
+        for attempt in range(3):
+            try:
+                members = provider.fetch(lat=lat, lon=lon, start=date.today(),
+                                         horizon_days=horizon)
+                break
+            except Exception as exc:
+                if attempt < 2:
+                    print(f"  ! flow bridge {gauge_id[:8]}: fetch failed "
+                          f"({type(exc).__name__}); retry {attempt + 1}/2…")
+                    time.sleep(2 * (attempt + 1))
+                else:
+                    skipped.append((gauge_id, f"{type(exc).__name__}: {exc}"))
+        if members is None or members.empty:
+            if members is not None:
+                skipped.append((gauge_id, "empty member frame"))
+            continue
+        mdf = members[["member", "date", "precip_mm"]].copy()
+        mdf.insert(0, "gauge_id", gauge_id)
+        frames.append(mdf)
+
+    if not frames:
+        print(f"flow ENS bridge: no member series produced "
+              f"({len(skipped)} gauge(s) failed) — nothing written.")
+        return None
+
+    out = pd.concat(frames, ignore_index=True)
+    out["provider"] = pd.Categorical([provider.name] * len(out))
+    out_path = Path(out_path if out_path is not None
+                    else fcfg.get("ens_bridge_cache",
+                                  "data/model/flow_ens_members.parquet"))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out.to_parquet(out_path, compression="snappy", index=False)
+    print(f"flow ENS bridge: {out['gauge_id'].nunique()} gauge(s) x "
+          f"{out['member'].nunique()} members x {out['date'].nunique()} days "
+          f"(provider={provider.name}) -> {out_path}")
+    for gauge_id, why in skipped:
+        print(f"  flow bridge skipped {gauge_id[:8]}: {why}")
+    return out
 
 
 def main() -> int:
@@ -132,14 +250,24 @@ def main() -> int:
               .drop_duplicates("station_id").set_index("station_id"))
     links = pd.read_csv(LINKS).drop_duplicates("GWStationID").set_index("GWStationID")
 
-    pilots = _select_pilots(history_counts, coords, links, args.stations, args.scope)
-    print(f"Boreholes ({len(pilots)}, scope={args.scope}): "
+    short_enabled = bool(ens.get("pastas", {}).get("short_record", {})
+                         .get("enabled", True))
+    pilots = _select_pilots(history_counts, coords, links, args.stations,
+                            args.scope, include_short=short_enabled)
+    print(f"Boreholes ({len(pilots)}, scope={args.scope}"
+          f"{'+short' if short_enabled else ''}): "
           + ", ".join(s[:8] for s in pilots))
 
     provider_name, explicit = resolve_provider_name(ens, args.provider)
     cache_root = ens.get("raw_cache_root", "data/raw/ensemble")
+    # Only ecmwf_opendata's GRIB cache needs pruning (see provider.py /
+    # ecmwf_opendata.py) — other providers' constructors don't take this
+    # kwarg, so it's only forwarded when that's the provider in play.
+    provider_kwargs = {}
+    if provider_name == "ecmwf_opendata":
+        provider_kwargs["cache_retention_days"] = int(ens.get("cache_retention_days", 7))
     try:
-        provider = get_provider(provider_name, cache_root=cache_root)
+        provider = get_provider(provider_name, cache_root=cache_root, **provider_kwargs)
     except ImportError as exc:                  # GRIB stack absent at import
         if explicit:
             raise
@@ -253,6 +381,27 @@ def main() -> int:
     if bias_rows:
         print(f"  -> {bias.BIAS_PATH.relative_to(_PROJECT_ROOT)} "
               f"({len(bias_rows)} freshly fitted)")
+
+    # Low-flow Rivers pilot ENS bridge (build_plan.md Stage 6): reuse THIS
+    # process's already-decoded cycle to emit the per-gauge member forcing
+    # that the pastas-env build_flow_members reads. Optional subsystem — a
+    # bridge failure must never fail the GW members this stage exists for;
+    # build_flow_members graceful-skips on a missing/stale bridge.
+    #
+    # pilot_path resolves from config (forecast.ensemble.flow.pilot_path,
+    # falling back to the FLOW_PILOT default) via the SAME helper
+    # build_flow_seasonal_shadow.py / refresh_seasonal_inputs.py use, so all
+    # four flow-pilot consumers agree on where the pilot CSV lives — cfg is
+    # already in hand here from the caller.
+    try:
+        build_flow_ens_bridge(
+            provider, cfg,
+            pilot_path=resolve_flow_pilot_path(cfg, _PROJECT_ROOT),
+        )
+    except Exception as exc:
+        print(f"! flow ENS bridge failed ({type(exc).__name__}: {exc}) — "
+              f"the daily flow member drive will skip today; GW members are "
+              f"unaffected.")
     return 0
 
 

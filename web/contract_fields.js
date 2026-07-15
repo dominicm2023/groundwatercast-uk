@@ -14,12 +14,18 @@ window.GWC_CONTRACT = {
     "headline", "threshold", "threshold_source", "is_pinned",
     "has_forecast", "has_seasonal",
     "st_seq", "op_seq",
+    // RiverCast (Stage 7) — station_type is absent on every GW feature;
+    // river_name/rain_dependent are flow-only.
+    "station_type", "river_name", "rain_dependent",
   ],
 
   // stations/<id>.json — dotted paths (nested groups flattened for the test)
   DETAIL_FIELDS: [
     "station.station_id", "station.slug", "station.name", "station.lat",
     "station.lon", "station.aquifer",
+    // RiverCast (Stage 7) — flow-only station fields.
+    "station.station_type", "station.river_name", "station.linked_boreholes",
+    "station.winterbourne", "station.dry_months",
     "status.status", "status.percentile", "status.trend", "status.level",
     "status.obs_date", "status.obs_age_days", "status.month",
     "freshness.label", "freshness.days_since", "freshness.last_real_reading",
@@ -35,6 +41,10 @@ window.GWC_CONTRACT = {
     "forecast.model_spread_mean", "forecast.censored_frac",
     "forecast.gw_p50_end", "forecast.tier", "forecast.headline",
     "forecast.fan",
+    // RiverCast (Stage 7) — flow-only forecast fields (never overload
+    // p_breach_14d: opposite direction/semantics from the GW field above).
+    "forecast.p_below_q95", "forecast.p_below_q95_14d",
+    "forecast.rain_dependent",
     "fan.lead", "fan.date", "fan.p10", "fan.p50", "fan.p90", "fan.segment",
     "seasonal.run", "seasonal.seas5_weighted", "seasonal.n_traces",
     "seasonal.months",

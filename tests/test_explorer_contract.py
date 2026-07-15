@@ -38,7 +38,8 @@ def test_geojson_fields_are_documented():
     documented = (set(C.GEOJSON_IDENTITY_PROPS) | set(C.GEOJSON_STATUS_PROPS)
                   | set(C.GEOJSON_FRESHNESS_PROPS) | set(C.GEOJSON_FORECAST_PROPS)
                   | set(C.GEOJSON_FLAG_PROPS) | set(C.GEOJSON_TREND_PROPS)
-                  | set(C.GEOJSON_TIMELINE_PROPS))
+                  | set(C.GEOJSON_TIMELINE_PROPS)
+                  | set(C.GEOJSON_TYPE_PROPS) | set(C.GEOJSON_FLOW_PROPS))
     undocumented = sorted(f for f in geo if f not in documented)
     assert not undocumented, (
         f"explorer reads geojson props absent from the pack contract: {undocumented}")
@@ -56,15 +57,18 @@ def test_geojson_fields_cover_timeline_and_identity():
 
 def test_detail_fields_are_documented():
     _, det = _load_fields()
-    # Allowed leaf keys per nested group of stations/<id>.json.
-    station = {"station_id", "slug", "name", "lat", "lon", "aquifer",
-               "aquifer_designation"}
+    # Allowed leaf keys per nested group of stations/<id>.json. RiverCast
+    # (Stage 7) additions are unioned in, not swapped: a GW detail file's
+    # "forecast"/"fan"/"station" shapes are exactly as before.
+    station = ({"station_id", "slug", "name", "lat", "lon", "aquifer",
+               "aquifer_designation"} | set(C.FLOW_STATION_KEYS))
     status = set(C.GEOJSON_STATUS_PROPS) | {"month"}
     freshness = {"label", "days_since", "last_real_reading", "data_source"}
     normals = set(C.NORMALS_ROW_KEYS)
     observed = {"unit", "series"}
-    forecast = set(C.DETAIL_FORECAST_KEYS)
-    fan = set(C.FAN_KEY_MAP.values()) | {"lead", "date"} | set(C.FAN_EXTRA_KEYS)
+    forecast = set(C.DETAIL_FORECAST_KEYS) | set(C.DETAIL_FLOW_FORECAST_KEYS)
+    fan = (set(C.FAN_KEY_MAP.values()) | {"lead", "date"} | set(C.FAN_EXTRA_KEYS)
+          | set(C.FLOW_FAN_KEY_MAP.values()))
     seasonal = {"run", "origin_date", "seas5_weighted", "n_traces", "months"}
     months = set(C.SEASONAL_MONTH_KEYS)
     groups = {

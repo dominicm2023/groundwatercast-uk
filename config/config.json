@@ -21,18 +21,20 @@
       "enabled": true,
       "min_years": 3.0,
       "min_obs": 730,
-      "slope_min_m_per_yr": 0.10,
-      "r2_min": 0.50,
+      "slope_min_m_per_yr": 0.1,
+      "r2_min": 0.5,
       "drift_ratio_min": 1.0,
       "change_min_m": 0.15,
       "change_med_m": 0.5,
       "change_high_m": 2.0,
-      "step_threshold_m": 0.30,
+      "step_threshold_m": 0.3,
       "step_rel_k": 4.0,
       "step_min_count": 1,
       "rain_corr_min": 0.35,
       "emit_min_severity": "low",
-      "public_provenance": ["artifact_like"],
+      "public_provenance": [
+        "artifact_like"
+      ],
       "output_path": "outputs/trend_flags.csv",
       "history_path": "outputs/trend_flags_history.parquet",
       "neighbour": {
@@ -46,7 +48,7 @@
     },
     "abstraction_screen": {
       "enabled": false,
-      "_status": "EXPERIMENTAL — disabled. The seasonal-amplitude-vs-neighbours metric is validated on synthetic series (tests/test_abstraction_screen.py), but on the real fleet it over-flags natural high-amplitude Chalk (575 evaluated → 125 flagged at 25 km / 51 at 6 km), because the 3-value aquifer class can't separate downland Chalk from valley/confined Chalk. Needs a depth-to-water / hydrogeological-domain covariate, or the EA abstraction-licence ingest, before it is trustworthy. See docs/abstraction_screen_design.md.",
+      "_status": "EXPERIMENTAL \u2014 disabled. The seasonal-amplitude-vs-neighbours metric is validated on synthetic series (tests/test_abstraction_screen.py), but on the real fleet it over-flags natural high-amplitude Chalk (575 evaluated \u2192 125 flagged at 25 km / 51 at 6 km), because the 3-value aquifer class can't separate downland Chalk from valley/confined Chalk. Needs a depth-to-water / hydrogeological-domain covariate, or the EA abstraction-licence ingest, before it is trustworthy. See docs/abstraction_screen_design.md.",
       "min_years": 3.0,
       "min_obs": 730,
       "min_amp_m": 0.3,
@@ -60,7 +62,7 @@
         "radius_km": 25.0,
         "min_neighbours": 2,
         "require_same_aquifer_class": true,
-        "_comment": "Advisory screen for the CYCLIC abstraction case the trend screen misses: a borehole whose seasonal drawdown amplitude greatly exceeds its SAME-aquifer-class neighbours' is a candidate for a local-abstraction metadata check. Same-aquifer comparison controls for Chalk swinging more than Sandstone; distance is still the primary proxy. Report-only — never auto-excludes; a human confirms and adds an abstraction_influenced entry to known_bad_stations.yaml by hand."
+        "_comment": "Advisory screen for the CYCLIC abstraction case the trend screen misses: a borehole whose seasonal drawdown amplitude greatly exceeds its SAME-aquifer-class neighbours' is a candidate for a local-abstraction metadata check. Same-aquifer comparison controls for Chalk swinging more than Sandstone; distance is still the primary proxy. Report-only \u2014 never auto-excludes; a human confirms and adds an abstraction_influenced entry to known_bad_stations.yaml by hand."
       }
     }
   },
@@ -70,6 +72,13 @@
       "preferred_period": 86400,
       "fallback": "lowest_period"
     }
+  },
+  "flow_catalogue": {
+    "stations_url": "https://environment.data.gov.uk/hydrology/id/stations.csv",
+    "observed_property": "waterFlow",
+    "stations_limit": 20000,
+    "output_path": "data/processed/flow_catalogue.csv",
+    "links_output_path": "data/processed/flow_links.csv"
   },
   "download": {
     "min_date": "2018-01-01",
@@ -140,6 +149,7 @@
         "operational_window_days": 14
       },
       "raw_cache_root": "data/raw/ensemble",
+      "cache_retention_days": 7,
       "gw_roll_method": "reduced_form_ar",
       "bias_correction": "mean_ratio",
       "dev_provider": "open_meteo",
@@ -154,7 +164,38 @@
         "archive_cache": "data/model/forecast_pastas_archive.parquet",
         "fan_archive_cache": "data/model/forecast_pastas_fan_archive.parquet",
         "mc_samples": 4000,
-        "scope": "fleet"
+        "scope": "fleet",
+        "short_record": {
+          "enabled": true,
+          "gate": {
+            "origins_back": [
+              45,
+              90,
+              135
+            ],
+            "window": 14,
+            "min_origins": 2,
+            "target_coverage_pct": 80.0,
+            "min_coverage_pct": 50.0,
+            "max_skill_ratio": 1.15,
+            "max_band_frac": 0.6
+          }
+        }
+      },
+      "flow": {
+        "enabled": true,
+        "rfunc": "Gamma",
+        "recharge": "FlexModel",
+        "pilot_path": "data/processed/flow_pilot.csv",
+        "models_cache": "data/model/flow_models.json",
+        "ens_bridge_cache": "data/model/flow_ens_members.parquet",
+        "members_cache": "data/model/forecast_flow_members.parquet",
+        "summary_cache": "data/model/forecast_flow_summary.csv",
+        "fan_cache": "data/model/forecast_flow_fan.csv",
+        "archive_cache": "data/model/forecast_flow_archive.parquet",
+        "fan_archive_cache": "data/model/forecast_flow_fan_archive.parquet",
+        "mc_samples": 4000,
+        "window_days": 14
       }
     },
     "seasonal": {
@@ -166,7 +207,13 @@
       "band_mode": "additive",
       "summary_cache": "data/model/forecast_seasonal_summary.csv",
       "archive_cache": "data/model/forecast_seasonal_archive.parquet",
-      "normals_cache": "data/model/gw_monthly_normals.csv"
+      "normals_cache": "data/model/gw_monthly_normals.csv",
+      "max_anchor_age_days": 45
+    },
+    "flow_seasonal": {
+      "enabled": true,
+      "archive_cache": "data/model/flow_seasonal_shadow_archive.parquet",
+      "mc_samples": 2000
     }
   },
   "publish": {

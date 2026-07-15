@@ -165,13 +165,22 @@ class ECMWFOpenDataENS(EnsembleRainfallProvider):
     name = "ecmwf_opendata"
 
     def __init__(self, cache_root="data/raw/ensemble", *, source: str = "ecmwf",
-                 run: str | None = None):
+                 run: str | None = None, cache_retention_days: int = 7):
         """``run`` pins a model cycle ("YYYYMMDDHH", 00/12Z); None = latest.
         Pinning is what makes like-for-like provider comparisons possible
-        (scripts/validate_ens_provider.py) — the daily cron leaves it None."""
+        (scripts/validate_ens_provider.py) — the daily cron leaves it None.
+
+        ``cache_retention_days`` (default 7, config `forecast.ensemble.
+        cache_retention_days`) bounds the on-disk GRIB cycle cache: after
+        each fresh download, cycle dirs older than this are pruned (see
+        ``EnsembleRainfallProvider.prune_old_cycles``). Only the current
+        cycle is ever read downstream, so a week of headroom is generous
+        slack for retries/backfills while keeping the ~1 GB/day cache from
+        growing unbounded. ``<= 0`` disables pruning."""
         super().__init__(cache_root)
         self.source = source
         self.run = run
+        self.cache_retention_days = int(cache_retention_days)
         self._ds_cache: dict = {}      # per-run decoded UK grids (decode once, see _decoded)
 
     def fetch(self, lat: float, lon: float, start: date,
@@ -230,6 +239,11 @@ class ECMWFOpenDataENS(EnsembleRainfallProvider):
                 step=steps,
                 target=str(target),
             )
+        # Only prune after an actual download (not a cache hit above) — one
+        # cycle appears per run, so this runs ~once/day in production rather
+        # than once per borehole. A prune failure must never fail the fetch
+        # that just succeeded.
+        self.prune_old_cycles_safe(self.cache_retention_days)
         return paths
 
     # -- decode (needs cfgrib/eccodes) ---------------------------------------

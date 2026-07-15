@@ -13,7 +13,17 @@
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   }
   const fmt1 = (v) => (v == null || isNaN(v) ? "–" : (+v).toFixed(1));
+  const fmt3 = (v) => (v == null || isNaN(v) ? "–" : (+v).toFixed(3));
   const dnum = (d) => new Date(d + "T00:00:00Z").getTime();
+
+  // Flow values (m3/s) are typically well under 1 — fmt1 would round most of
+  // a winterbourne's range to "0.0". unitOf/fmtOf pick the right precision +
+  // label from detail.observed.unit ("m3/s" for RiverCast, else GW's mAOD).
+  function unitOf(detail) {
+    return (detail && detail.observed && detail.observed.unit) || "mAOD";
+  }
+  function unitLabel(unit) { return unit === "m3/s" ? "m³/s" : "mAOD"; }
+  function fmtOf(unit) { return unit === "m3/s" ? fmt3 : fmt1; }
 
   // -- nice-ish y range with a little padding --------------------------------
   function yRange(vals) {
@@ -42,6 +52,7 @@
     const m = large ? { l: 48, r: 16, t: 16, b: 30 } : { l: 38, r: 8, t: 10, b: 22 };
     const FS_Y = large ? 11 : 9, FS_X = large ? 10.5 : 8.5, FS_M = large ? 10 : 8;
     const iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const unit = unitOf(detail), uLabel = unitLabel(unit), fv = fmtOf(unit);
 
     const fanAll = (detail.forecast && detail.forecast.fan) || [];
     // Observations are the truth: the modelled nowcast exists only to BRIDGE
@@ -56,7 +67,7 @@
     const nowcast = fanAll.filter((f) => f.segment === "nowcast" && dnum(f.date) > lastObsT);
     const fan = fanAll.filter((f) => f.segment !== "nowcast");   // forecast segment
     const fanFirst = (nowcast[0] || fan[0]) || null;             // earliest DRAWN fan point
-    const histDays = opts.historyDays || 365;
+    const histDays = opts.historyDays || 90;
     let obs = obsFull;
     if (obs.length && fanFirst) {
       const cutoff = dnum(fanFirst.date) - histDays * 86400000;
@@ -99,7 +110,7 @@
     for (let i = 0; i <= nY; i++) {
       const v = ylo + (i / nY) * (yhi - ylo), y = Y(v);
       parts.push(`<line x1="${m.l - 3}" y1="${y}" x2="${m.l + iw}" y2="${y}" stroke="#eef1f4"/>`);
-      parts.push(`<text x="${m.l - 5}" y="${y + 3}" text-anchor="end" font-size="${FS_Y}" fill="#6b7280">${fmt1(v)}</text>`);
+      parts.push(`<text x="${m.l - 5}" y="${y + 3}" text-anchor="end" font-size="${FS_Y}" fill="#6b7280">${fv(v)}</text>`);
     }
 
     // The nowcast segment (drawn below) fills the last-obs -> today gap with a
@@ -212,7 +223,7 @@
     if (thr != null) {
       const y = Y(thr);
       parts.push(`<line x1="${m.l}" y1="${y}" x2="${m.l + iw}" y2="${y}" stroke="#c0392b" stroke-width="1" stroke-dasharray="4 3"/>`);
-      parts.push(`<text x="${m.l + iw}" y="${y - 3}" text-anchor="end" font-size="${FS_X}" fill="#c0392b">threshold ${fmt1(thr)}</text>`);
+      parts.push(`<text x="${m.l + iw}" y="${y - 3}" text-anchor="end" font-size="${FS_X}" fill="#c0392b">threshold ${fv(thr)}</text>`);
     }
 
     // User trigger levels (the ladder) — distinct purple dashed lines, labelled
@@ -240,13 +251,15 @@
     // hover layer (populated by attachHover)
     parts.push(`<g class="hoverlayer" style="pointer-events:none"></g>`);
 
-    _fanCtx = { W, H, m, iw, ih, x0, x1, ylo, yhi, obs, fan: fanAll, seas, thr };
+    _fanCtx = { W, H, m, iw, ih, x0, x1, ylo, yhi, obs, fan: fanAll, seas, thr, unit, uLabel, fv };
 
     // Real forecast horizon for the screen-reader label.
     const _hd = detail.forecast && detail.forecast.horizon_days;
     const _hLbl = _hd != null ? _hd : 15;
+    const _quantity = unit === "m3/s" ? "River flow" : "Groundwater level";
+    const _tail = unit === "m3/s" ? "" : ", continuing as a seasonal outlook";
     return `<svg class="svg-chart svg-fan" viewBox="0 0 ${W} ${H}" role="img" ` +
-      `aria-label="Groundwater level: observed history and ${_hLbl}-day forecast fan, continuing as a seasonal outlook">${parts.join("")}</svg>`;
+      `aria-label="${_quantity}: observed history and ${_hLbl}-day forecast fan${_tail}">${parts.join("")}</svg>`;
   }
 
   // Attach a hover crosshair + value readout to a rendered fan <svg>, using
@@ -292,10 +305,10 @@
           markX = X(dnum(f.date)); markY = Y(f.p50);
           const nc = f.segment === "nowcast";
           rows.push([shortDate(dnum(f.date)) + (nc ? " · nowcast" : ""), ""]);
-          rows.push([nc ? "Est. level" : "Median", fmt1(f.p50) + " mAOD"]);
-          rows.push(["P10–P90", fmt1(f.p10) + "–" + fmt1(f.p90)]);
+          rows.push([nc ? "Est. level" : "Median", ctx.fv(f.p50) + " " + ctx.uLabel]);
+          rows.push(["P10–P90", ctx.fv(f.p10) + "–" + ctx.fv(f.p90)]);
           if (ctx.thr != null)
-            rows.push(["vs threshold", (f.p50 - ctx.thr >= 0 ? "+" : "") + fmt1(f.p50 - ctx.thr) + " m"]);
+            rows.push(["vs threshold", (f.p50 - ctx.thr >= 0 ? "+" : "") + ctx.fv(f.p50 - ctx.thr) + " " + ctx.uLabel]);
         }
       } else if (ctx.obs.length) {
         const r = nearest(ctx.obs, t, (p) => dnum(p[0]));
@@ -303,7 +316,7 @@
         if (o) {
           markX = X(dnum(o[0])); markY = Y(o[1]);
           rows.push([shortDate(dnum(o[0])), ""]);
-          rows.push(["Observed", fmt1(o[1]) + " mAOD"]);
+          rows.push(["Observed", ctx.fv(o[1]) + " " + ctx.uLabel]);
         }
       }
       return { markX, markY, rows };
@@ -511,5 +524,8 @@
       parts.join("") + `</svg>`;
   }
 
-  window.GWC_CHARTS = { fanChart, attachFanHover, ladder, seasonalBars, verifyChart };
+  window.GWC_CHARTS = {
+    fanChart, attachFanHover, ladder, seasonalBars, verifyChart,
+    unitOf, unitLabel, fmtOf,
+  };
 })();

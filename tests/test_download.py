@@ -84,7 +84,7 @@ def test_extract_drops_none():
 
 def test_extract_all_types_present(links_df):
     result = extract_measure_ids(links_df)
-    assert set(result.keys()) == {"groundwater", "rainfall"}
+    assert set(result.keys()) == {"groundwater", "rainfall", "flow"}
 
 
 def test_extract_correct_counts(links_df):

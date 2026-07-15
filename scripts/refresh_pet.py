@@ -39,6 +39,18 @@ def _config_scope() -> str:
         return "live"
 
 
+def _short_record_enabled() -> bool:
+    """Whether the short-record fan tier is on — if so PET must also be cached
+    for the short-record candidates (else build_pastas_models skips them on a
+    missing PET cache)."""
+    try:
+        cfg = json.loads((ROOT / "config" / "config.json").read_text(encoding="utf-8"))
+        return bool(cfg.get("forecast", {}).get("ensemble", {}).get("pastas", {})
+                    .get("short_record", {}).get("enabled", True))
+    except Exception:
+        return True
+
+
 def _incremental_start(points: dict, cache_root: Path, full_start: date) -> date:
     """Earliest date to fetch for an incremental top-up: a week before the oldest
     per-station cache tail. Returns ``full_start`` if any station has no cache."""
@@ -99,7 +111,7 @@ def main() -> int:
                          "open_meteo (legacy per-point archive)")
     args = ap.parse_args()
 
-    ids = sorted(select_scope(args.scope))
+    ids = sorted(select_scope(args.scope, include_short=_short_record_enabled()))
     cat = (pd.read_csv(CATALOGUE).query("measure_type == 'groundwater'")
            .dropna(subset=["lat", "lon"]).drop_duplicates("station_id")
            .set_index("station_id"))

@@ -182,20 +182,48 @@
       .catch(function () {});
   }
 
+  // RiverCast teaser — fill in the live pilot gauge count; hide the card
+  // entirely if the pack hasn't published any flow gauges yet (a host that
+  // hasn't caught up on the flow subsystem must not show a dead promise).
+  function renderRiverTeaser(feats) {
+    var el = document.getElementById("river-teaser");
+    var mini = document.getElementById("river-teaser-mini");
+    if (!el) return;
+    var nFlow = 0;
+    for (var i = 0; i < feats.length; i++) {
+      if (feats[i].properties && feats[i].properties.station_type === "flow") nFlow++;
+    }
+    if (!nFlow) { el.hidden = true; return; }
+    if (mini) {
+      mini.textContent = "Daily low-flow outlooks for " + nFlow.toLocaleString() +
+        " chalk streams & winterbournes — the first rivers to pass our forecast-skill gates.";
+    }
+    el.hidden = false;
+  }
+
   fetch(PACK + "/stations.geojson")
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(function (gj) {
       var feats = (gj && gj.features) || [];
+      // The hero stat and "notable" cards are BOREHOLE statistics — RiverCast
+      // flow gauges share the geojson (station_type === "flow") but must not
+      // count as "boreholes" nor be featured with a /b/ link (flow stations
+      // get no stub page in v1 — build_seo_stubs skips them, so the link
+      // would 404). The river teaser is the one consumer of the flow rows.
+      var gwFeats = feats.filter(function (f) {
+        return ((f.properties || {}).station_type) !== "flow";
+      });
       var counts = { below: 0, near: 0, above: 0 };
       var nForecast = 0;
-      for (var i = 0; i < feats.length; i++) {
-        var p = feats[i].properties || {};
+      for (var i = 0; i < gwFeats.length; i++) {
+        var p = gwFeats[i].properties || {};
         if (p.status && counts[p.status] != null) counts[p.status]++;
         if (p.has_forecast) nForecast++;
       }
       renderStat(counts, nForecast);
       initMap(gj);
-      renderNotable(feats);
+      renderNotable(gwFeats);
+      renderRiverTeaser(feats);
       renderTrend();
       var lab = document.getElementById("hero-map-lab");
       if (lab) {

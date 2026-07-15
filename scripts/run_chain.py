@@ -20,15 +20,20 @@ Groups (step numbers in brackets):
     --xref      [7, 7b]    EA flood-monitoring cross-refs (after catalogue rebuild)
     --live      [8, 8b]    hourly live-feed refresh (GW -> shards; rainfall tail)
     --ensemble  [8d, 8e]   probabilistic ensemble (daily)
-    --pastas    [8e-pre, 8f, 8g, 8h]  Pastas TFN forecast (8f-8h need .venv-pastas)
-    --seasonal  [9, 9b]    seasonal outlook, months 1-6 (MONTHLY cadence —
-                run after SEAS5's update on the 5th; 9b needs .venv-pastas)
+    --pastas    [8e-pre, 8f, 8f-flow, 8g, 8h, 8h-flow]  Pastas TFN forecast, GW +
+                low-flow Rivers (8f-8h-flow need .venv-pastas; 8f-flow/8h-flow
+                graceful-skip when the low-flow pilot isn't set up on this host)
+    --seasonal  [9, 9b, 9c]  seasonal outlook, months 1-6 (MONTHLY cadence —
+                run after SEAS5's update on the 5th; 9b/9c need .venv-pastas).
+                9c is the low-flow shadow archive (build_plan.md Stage 6b):
+                internal evidence only, publishes nothing; graceful-skips if
+                the flow pilot/models aren't set up on this host.
     --publish   [10]       assemble the published artifact pack
                 (docs/artifact_contract.md) — pure read, run LAST
-    --forecast  [8d, 8e, 8e-pre, 8g, 8h]  the DAILY forecast refresh — ensemble +
-                pastas WITHOUT 8f (build_pastas_models recalibration is a
-                retrain, not a refresh; run --pastas for that). Cron pairs it
-                with the pack: `run_chain --forecast --publish`.
+    --forecast  [8d, 8e, 8e-pre, 8g, 8h, 8h-flow]  the DAILY forecast refresh —
+                ensemble + pastas WITHOUT 8f/8f-flow (calibration/recalibration
+                is a retrain, not a refresh; run --pastas for that). Cron pairs
+                it with the pack: `run_chain --forecast --publish`.
     --all       everything above, in documented order
 
 Stages run with ``cwd`` = repo root, streaming output, and stop on the
@@ -92,6 +97,21 @@ def _release_lock() -> None:
     except OSError:
         pass
 
+
+def _acquire_lock_or_wait(wait_min: float, *, sleep=time.sleep,
+                          clock=time.monotonic) -> bool:
+    """Acquire the lock, optionally waiting up to ``wait_min`` minutes (polling
+    every 30 s) for a colliding run to finish. Returns True on acquire, False on
+    timeout. ``wait_min == 0`` reproduces the old exit-immediately behaviour."""
+    deadline = clock() + max(0.0, wait_min) * 60.0
+    while not _acquire_lock():
+        if clock() >= deadline:
+            return False
+        print(f"run_chain lock held — waiting up to {wait_min:.0f} min "
+              "for it to clear…", file=sys.stderr)
+        sleep(30)
+    return True
+
 # Interpreter markers — resolved to a real executable at run time.
 MAIN_ENV = "main"      # the interpreter running this script (main GW-pipeline venv)
 PASTAS_ENV = "pastas"  # .venv-pastas — numba/llvmlite stack, never the main env
@@ -130,6 +150,28 @@ class Stage:
 # Do not reorder without updating CLAUDE.md (and vice versa).
 # ---------------------------------------------------------------------------
 STAGES = (
+    # -- ingest [step 0]: top up existing raw GW CSVs to the EA archive tail
+    #    BEFORE the observed rebuild, so status/obs-age track the archive (~weeks)
+    #    instead of drifting months. Own group (kept out of the pure --core
+    #    rebuild); run via the "freshness" virtual group (the daily path below).
+    Stage("refresh_gw_tail", "0",
+          ("-m", "scripts.refresh_gw_tail"), "ingest", MAIN_ENV,
+          "incremental tail top-up of raw GW readings (keeps ingested copy current)"),
+    Stage("refresh_gw_shard_tail", "0b",
+          ("-m", "scripts.refresh_gw_shard_tail"), "ingest", MAIN_ENV,
+          "append the topped-up archive tail into the per-station shards + rebuild "
+          "gw_freshness (v16's audited-archive sibling — O(new data), no joined rebuild)"),
+    # -- flow ingest [step 0c]: low-flow build_plan.md Stage 2. Flow gauges
+    #    have no separate features/joined pipeline (unlike GW): one raw
+    #    measure CSV per gauge IS the series, so a single idempotent step
+    #    does both first-download-and-build and daily top-up-and-append
+    #    (src/download/flow.py). Independent of the GW freshness stages —
+    #    placed alongside them because it is also a daily top-up.
+    Stage("build_flow_shards", "0c",
+          ("-m", "scripts.build_flow_shards"), "ingest", MAIN_ENV,
+          "top up raw flow archives + build/extend per-gauge Parquet shards "
+          "(data/features/flow_by_station/); needs flow_links.csv (Stage 1)"),
+
     # -- core [steps 1-6]: full rebuild order any time joined_timeseries.csv changes
     Stage("v15_build_dipped_daily_series", "1",
           ("-m", "scripts.v15_build_dipped_daily_series"), "core", MAIN_ENV,
@@ -164,14 +206,21 @@ STAGES = (
     Stage("v16_refresh_live_gw", "8",
           ("scripts/v16_refresh_live_gw.py",), "live", MAIN_ENV,  # path-form invocation, per CLAUDE.md
           "pull live GW readings (hourly); feeds the live tail seed"),
+    # v19 lives in "ingest", NOT "live": its output (rainfall recharge tails)
+    # is consumed once a day by build_ensemble_members, yet running it hourly
+    # cost ~30 min per --live and locked the 06:30 forecast cron out of the
+    # run_chain lock (2026-07-09, the 4-hour-late publish). The daily cron's
+    # --freshness group runs it right before the forecast instead — fresher at
+    # build time than any hourly cadence, at 1/24th the API load.
     Stage("v19_refresh_live_rainfall", "8b",
-          ("-m", "scripts.v19_refresh_live_rainfall"), "live", MAIN_ENV,
+          ("-m", "scripts.v19_refresh_live_rainfall"), "ingest", MAIN_ENV,
           "extend raw rainfall tail (closes Recharge_Weibull staleness); needs xref 7b"),
 
     # -- ensemble [steps 8d, 8e]: daily probabilistic forecast
     Stage("build_ensemble_members", "8d",
           ("-m", "scripts.build_ensemble_members"), "ensemble", MAIN_ENV,
-          "per-member GW trajectories; needs live rainfall (8b)"),
+          "per-member GW trajectories + the low-flow pilot's ENS bridge "
+          "(flow_ens_members.parquet, read by 8h-flow); needs live rainfall (8b)"),
     Stage("build_ensemble_summary", "8e",
           ("-m", "scripts.build_ensemble_summary"), "ensemble", MAIN_ENV,
           "aggregates 8d into breach prob + fan; run AFTER 8d"),
@@ -185,12 +234,41 @@ STAGES = (
     Stage("build_pastas_models", "8f",
           ("-m", "scripts.build_pastas_models"), "pastas", PASTAS_ENV,
           "calibrate per-BH Pastas models; needs joined timeseries + PET cache (8e-pre)"),
+    # -- flow models [step 8f-flow]: low-flow build_plan.md Stage 6, the
+    #    monthly-recalibration sibling of 8f (calibrate_flow instead of
+    #    calibrate, one JSON store per architecture-decision-2's ModelRec
+    #    pattern). Sits right after 8f — same "recalibration, not a daily
+    #    refresh" reason it is EXCLUDED from the "forecast" virtual group
+    #    below. GRACEFUL-SKIPS (exit 0) when data/processed/flow_pilot.csv is
+    #    absent, so a host without the low-flow pilot enabled is unaffected.
+    Stage("build_flow_models", "8f-flow",
+          ("-m", "scripts.build_flow_models"), "pastas", PASTAS_ENV,
+          "calibrate per-gauge two-pathway flow models + Q95; needs "
+          "data/processed/flow_pilot.csv (Stage 5/6 selection); graceful-skips if absent"),
     Stage("build_pastas_members", "8g",
           ("-m", "scripts.build_pastas_members"), "pastas", PASTAS_ENV,
           "drive models with ensemble member rainfall; run AFTER 8d (member rainfall) + 8f (models)"),
     Stage("build_pastas_summary", "8h",
           ("-m", "scripts.build_pastas_summary"), "pastas", PASTAS_ENV,
           "fan + breach prob + roll/Pastas spread; run AFTER 8g; also reads 8d members + gw_monthly_normals.csv"),
+    # -- flow members [step 8h-flow]: low-flow build_plan.md Stage 6 daily
+    #    production run — drive + Monte-Carlo aggregate + archive in one
+    #    stage (unlike GW's 8g/8h split; see build_flow_members.py's
+    #    docstring). Its ENS forcing comes ONLY from the on-disk bridge
+    #    data/model/flow_ens_members.parquet that 8d emits in MAIN_ENV
+    #    (build_ensemble_members.build_flow_ens_bridge) — this PASTAS_ENV
+    #    stage has no GRIB stack, and the production path must never touch
+    #    Open-Meteo (free tier is non-commercial; the June free-data
+    #    migration exists to keep the fan on fully-open ECMWF data). So it
+    #    runs AFTER 8d in the plan; missing/stale bridge → clean skip
+    #    (yesterday's fans remain). GRACEFUL-SKIPS (exit 0) likewise when
+    #    data/model/flow_models.json is absent/empty (no flow models on this
+    #    host) — included in the "forecast" virtual group below.
+    Stage("build_flow_members", "8h-flow",
+          ("-m", "scripts.build_flow_members"), "pastas", PASTAS_ENV,
+          "drive flow models with the 8d ENS bridge, Monte-Carlo aggregate + "
+          "archive; run AFTER 8d (bridge) + 8f-flow (models); graceful-skips "
+          "if either is missing"),
 
     # -- seasonal [steps 9, 9b]: monthly cadence (after SEAS5's update on the
     #    5th). Step 9 fetches/caches (main env); 9b is pure compute (pastas env).
@@ -200,6 +278,22 @@ STAGES = (
     Stage("build_seasonal_outlook", "9b",
           ("-m", "scripts.build_seasonal_outlook"), "seasonal", PASTAS_ENV,
           "ESP traces through the calibrated models, SEAS5-weighted terciles (monthly; AFTER 9)"),
+    # -- flow seasonal shadow [step 9c]: low-flow build_plan.md Stage 6b. The
+    #    SAME weighted-ESP method as 9b, through each pilot gauge's flow_2s
+    #    model, monthly, ALONGSIDE the GW seasonal run (so evidence starts
+    #    accruing from pilot day one). PUBLISHES NOTHING — internal archive
+    #    only (data/model/flow_seasonal_shadow_archive.parquet); no pack
+    #    fields, no UI, no meta counts (Stage 7 is where flow gets published).
+    #    Pure compute from the SAME caches 9 fetches (9's refresh now folds
+    #    in the flow pilot gauges alongside GW boreholes) — mirrors 9b's
+    #    fetch/compute env split exactly. GRACEFUL-SKIPS (exit 0) when the
+    #    low-flow pilot/models aren't set up on this host, same discipline as
+    #    8f-flow/8h-flow.
+    Stage("build_flow_seasonal_shadow", "9c",
+          ("-m", "scripts.build_flow_seasonal_shadow"), "seasonal", PASTAS_ENV,
+          "shadow-mode flow seasonal archive (evidence only, publishes nothing); "
+          "needs the flow pilot/models (8f-flow) + 9's ERA5/PET/SEAS5 caches; "
+          "run AFTER 9b (alongside the GW seasonal run); graceful-skips if absent"),
 
     # -- publish [step 10]: the versioned static pack (docs/artifact_contract.md).
     #    Pure read of existing artefacts — run LAST so it packages this run's
@@ -223,15 +317,41 @@ STAGES = (
           "emit per-borehole /b/<slug>/ SEO stubs + /browse + sitemap.xml + robots.txt (pure-read, AFTER 10)"),
 )
 
-GROUPS = ("core", "diagnostics", "xref", "live", "ensemble", "pastas", "seasonal", "publish")
+GROUPS = ("ingest", "core", "diagnostics", "xref", "live", "ensemble", "pastas", "seasonal", "publish")
 
 # Virtual groups: named stage SUBSETS that cut across the physical groups
 # above (still executed in STAGES order). "forecast" is the daily forecast
 # refresh — ensemble + the daily pastas stages, deliberately EXCLUDING
-# build_pastas_models (8f): recalibration is a retrain, not a refresh.
+# build_pastas_models (8f) AND build_flow_models (8f-flow): both are
+# recalibrations/retrains, not refreshes. build_flow_members (8h-flow) IS
+# included — it's the flow daily drive, run AFTER build_pastas_summary (8h)
+# per low-flow build_plan.md Stage 6 ("wire build_flow_members into the
+# forecast group after the GW forecast stages").
 VIRTUAL_GROUPS = {
     "forecast": ("build_ensemble_members", "build_ensemble_summary",
-                 "refresh_pet", "build_pastas_members", "build_pastas_summary"),
+                 "refresh_pet", "build_pastas_members", "build_pastas_summary",
+                 "build_flow_members"),
+    # "freshness" is the daily status refresh: top up the raw GW tail, then
+    # append that tail SURGICALLY into the per-station shards (which also
+    # rebuilds gw_freshness). Deliberately does NOT rebuild the joined/shards
+    # wholesale — the two documented failure modes of that: (a) the parquet
+    # rebuild wipes v16's live overlay (fresh-status regressed 288→188 on
+    # 2026-07-08), and (b) v15_build_dipped_daily_series only re-merges DIPPED
+    # data; propagating logged raw needs the full features build (~40 min, not
+    # a daily job). The shard-tail append touches only new dates, and audited
+    # rows replacing live rows on the same date is an upgrade, so the live
+    # overlay is never clobbered. Daily cron: --freshness --forecast --publish.
+    # Includes v19 (live rainfall tail) since its move out of the hourly
+    # --live: the forecast needs it fresh at 06:30, not on the hour every hour.
+    # Also includes build_flow_shards (low-flow build_plan.md Stage 2) — flow
+    # gauges' own daily top-up, independent of the GW tail/shard pair above
+    # but grouped here because it is the same "keep it current before the
+    # forecast" job. NOTE: select_stages preserves STAGES declaration order,
+    # not this tuple's order — build_flow_shards is declared right after
+    # refresh_gw_shard_tail (step 0c), so it runs BEFORE v19 in the actual
+    # plan (see tests/test_run_chain.py).
+    "freshness": ("refresh_gw_tail", "refresh_gw_shard_tail",
+                  "build_flow_shards", "v19_refresh_live_rainfall"),
 }
 
 
@@ -315,6 +435,11 @@ def _parse_args(argv=None):
                    help="print the plan and exit without running anything")
     p.add_argument("--dry-run", action="store_true",
                    help="print the exact commands without executing them")
+    p.add_argument("--lock-wait-min", type=float, default=0.0, metavar="MIN",
+                   help="if another run holds the lock, wait up to MIN minutes "
+                        "for it to finish rather than exiting (default 0 = exit "
+                        "immediately). Use in crons that can collide with the "
+                        "hourly --live, which now runs ~45 min.")
     return p.parse_args(argv)
 
 
@@ -378,7 +503,12 @@ def main(argv=None):
               file=sys.stderr)
         print(f"Skipping: {[s.name for s in needs_pastas]}", file=sys.stderr)
 
-    if not _acquire_lock():
+    # The hourly --live now runs ~45 min (v19 rainfall does real work post-fix),
+    # so a fixed-time cron (06:30 forecast, monthly) fires mid-live and would
+    # exit. --lock-wait-min lets it wait out the live run instead of skipping a
+    # whole day. A genuinely stuck run is still bounded by _acquire_lock's 6 h
+    # stale-steal.
+    if not _acquire_lock_or_wait(args.lock_wait_min):
         print("Another run_chain is already in progress (outputs/run_chain.lock) "
               "— exiting so we don't race its in-place shard/CSV writes. The "
               "next scheduled run will catch up.", file=sys.stderr)

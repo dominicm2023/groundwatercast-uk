@@ -10,11 +10,13 @@
   let selectedId = null;
 
   // -- shareable URL-hash state (roadmap 0.2): selected borehole + view + range.
-  // #bh=<id-or-name-slug>&view=<active|forecast|all>&range=<365|730|all>.
-  // Defaults (active view, 1y range, no selection) are omitted to keep links clean.
+  // #bh=<id-or-name-slug>&view=<active|forecast|all>&range=<90|365|730|all>&rivers=1.
+  // Defaults (active view, 90-day range, rivers off, no selection) are omitted
+  // to keep links clean; the homepage RiverCast teaser links with rivers=1 so
+  // the layer is already on when the explorer opens.
   const VIEWS = ["active", "forecast", "all"];
-  const RANGES = ["365", "730", "all"];
-  const state = { bh: null, view: "active", range: "365" };
+  const RANGES = ["90", "365", "730", "all"];
+  const state = { bh: null, view: "active", range: "90", rivers: false };
   let featById = new Map();
   let idsBySlug = new Map();
 
@@ -25,13 +27,17 @@
   const Hash = {
     read() {
       const q = new URLSearchParams(location.hash.replace(/^#/, ""));
-      return { bh: q.get("bh"), view: q.get("view"), range: q.get("range") };
+      return {
+        bh: q.get("bh"), view: q.get("view"), range: q.get("range"),
+        rivers: q.get("rivers") === "1" || q.get("layer") === "rivers",
+      };
     },
     write() {
       const q = new URLSearchParams();
       if (state.bh) q.set("bh", state.bh);
       if (state.view !== "active") q.set("view", state.view);
-      if (state.range !== "365") q.set("range", state.range);
+      if (state.range !== "90") q.set("range", state.range);
+      if (state.rivers) q.set("rivers", "1");
       const qs = q.toString();
       const hash = qs ? "#" + qs : "";
       if (hash === location.hash) return;            // no-op guard (avoids churn)
@@ -179,6 +185,64 @@
     setFrame(0);
   }
 
+  // -- RiverCast (rivers pilot) layer: distinct diamond markers for flow
+  // gauges — colour still encodes below/near/above (one vocabulary), the
+  // SHAPE is what marks a gauge as a river rather than a borehole. Toggled
+  // independently of the borehole view-mode/search filters: v1 is a small,
+  // fixed pilot list (~50 gauges), always shown together when the layer is
+  // on. A homepage teaser / shared link can pre-activate it via #rivers=1.
+  function setupRiverLayer(geojson) {
+    const hasFlow = geojson.features.some((f) => f.properties.station_type === "flow");
+    const row = document.getElementById("rivers-toggle-row");
+    const toggle = document.getElementById("rivers-toggle");
+    if (!hasFlow) { if (row) row.hidden = true; return; }
+
+    // A small filled diamond, registered as an SDF image so `icon-color` can
+    // paint it with the same status palette the circle dots use.
+    const SIZE = 32;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = SIZE;
+    const cctx = canvas.getContext("2d");
+    cctx.fillStyle = "#000";
+    const c = SIZE / 2, r = SIZE / 2 - 3;
+    cctx.beginPath();
+    cctx.moveTo(c, c - r); cctx.lineTo(c + r, c); cctx.lineTo(c, c + r); cctx.lineTo(c - r, c);
+    cctx.closePath(); cctx.fill();
+    if (!map.hasImage("river-diamond")) {
+      map.addImage("river-diamond", cctx.getImageData(0, 0, SIZE, SIZE), { sdf: true });
+    }
+
+    map.addLayer({
+      id: "stations-flow-dot", type: "symbol", source: "stations",
+      filter: ["==", ["get", "station_type"], "flow"],
+      layout: {
+        "icon-image": "river-diamond",
+        "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.4, 10, 0.75],
+        "icon-allow-overlap": true,
+        visibility: "none",
+      },
+      paint: {
+        "icon-color": COLOR_EXPR,
+        "icon-halo-color": "#ffffff", "icon-halo-width": 1.4,
+        "icon-opacity": 0.95,
+      },
+    });
+
+    const legend = document.getElementById("rivers-legend");
+    const setOn = (on) => {
+      map.setLayoutProperty("stations-flow-dot", "visibility", on ? "visible" : "none");
+      if (toggle) toggle.checked = on;
+      if (legend) legend.hidden = !on;
+      state.rivers = on;
+    };
+    if (row) row.hidden = false;
+    if (toggle) toggle.addEventListener("change", () => { setOn(toggle.checked); Hash.write(); });
+    setOn(state.rivers);
+    // exposed so the hash-restore / hashchange handlers can flip it without
+    // re-deriving the layer/image setup.
+    window.GWC_setRiversLayer = setOn;
+  }
+
   const map = new maplibregl.Map({
     container: "map",
     style: CFG.basemapStyle,
@@ -224,13 +288,18 @@
     const boot = Hash.read();
     if (VIEWS.includes(boot.view)) state.view = boot.view;
     if (RANGES.includes(boot.range)) state.range = boot.range;
+    if (boot.rivers) state.rivers = true;
 
     map.addSource("stations", { type: "geojson", data: geojson });
 
+    // GW boreholes only — RiverCast (flow) gauges get their own distinct-shape
+    // layer below so the two station kinds are never visually confused, even
+    // though status colour uses the same below/near/above vocabulary for both.
+    const NOT_FLOW = ["!=", ["get", "station_type"], "flow"];
     // outer ring marks forecast boreholes
     map.addLayer({
       id: "stations-ring", type: "circle", source: "stations",
-      filter: ["==", ["get", "has_forecast"], true],
+      filter: ["all", NOT_FLOW, ["==", ["get", "has_forecast"], true]],
       paint: {
         "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 6.5, 10, 11],
         "circle-color": "rgba(0,0,0,0)",
@@ -240,6 +309,7 @@
     });
     map.addLayer({
       id: "stations-dot", type: "circle", source: "stations",
+      filter: NOT_FLOW,
       paint: {
         "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 4, 10, 7],
         "circle-color": COLOR_EXPR,
@@ -248,7 +318,8 @@
         "circle-opacity": 0.95,
       },
     });
-    // selected highlight (separate layer, filtered to the chosen id)
+    // selected highlight (separate layer, filtered to the chosen id) — shared
+    // between boreholes and river gauges, so a selected diamond still rings.
     map.addLayer({
       id: "stations-selected", type: "circle", source: "stations",
       filter: ["==", ["get", "station_id"], "___none___"],
@@ -260,21 +331,29 @@
       },
     });
 
+    setupRiverLayer(geojson);
+
     map.on("click", "stations-dot", (e) => selectFeature(e.features[0], { focus: true }));
     map.on("mouseenter", "stations-dot", () => (map.getCanvas().style.cursor = "pointer"));
     map.on("mouseleave", "stations-dot", () => (map.getCanvas().style.cursor = ""));
+    map.on("click", "stations-flow-dot", (e) => selectFeature(e.features[0], { focus: true }));
+    map.on("mouseenter", "stations-flow-dot", () => (map.getCanvas().style.cursor = "pointer"));
+    map.on("mouseleave", "stations-flow-dot", () => (map.getCanvas().style.cursor = ""));
 
     setupTimeline(meta, geojson);
 
-    // hover tooltip
+    // hover tooltip (shared by boreholes and river gauges)
     const pop = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 8 });
-    map.on("mousemove", "stations-dot", (e) => {
+    const showPop = (e) => {
       const p = e.features[0].properties;
       pop.setLngLat(e.lngLat).setHTML(
         `<strong>${escapeHtml(p.name || p.station_id)}</strong><br>${statusText(p)}`
       ).addTo(map);
-    });
+    };
+    map.on("mousemove", "stations-dot", showPop);
     map.on("mouseleave", "stations-dot", () => pop.remove());
+    map.on("mousemove", "stations-flow-dot", showPop);
+    map.on("mouseleave", "stations-flow-dot", () => pop.remove());
 
     wireFilters(geojson);
     wireGeology(meta);
@@ -318,6 +397,7 @@
       }
       window.GWC_DETAIL.bindFan(body, d);
       window.GWC_DETAIL.bindData(body);
+      if (window.GWC_DETAIL.bindLinkedBoreholes) window.GWC_DETAIL.bindLinkedBoreholes(body);
       // (re)wire the watchlist pin control every render — it lives in the
       // replaced innerHTML, so it needs per-render wiring (like bindFan).
       if (window.GWC_WATCH && window.GWC_WATCH.bindDetail) {
@@ -397,15 +477,18 @@
   // replaceState writes don't fire this, so there's no feedback loop.
   window.addEventListener("hashchange", () => {
     const h = Hash.read();
-    // Absent params mean DEFAULTS — Hash.write omits view=active / range=365
+    // Absent params mean DEFAULTS — Hash.write omits view=active / range=90
     // for clean links, so back-navigating to a bare URL must reset them, not
     // leave the previous non-default state stuck.
-    const range = RANGES.includes(h.range) ? h.range : "365";
+    const range = RANGES.includes(h.range) ? h.range : "90";
     const view = VIEWS.includes(h.view) ? h.view : "active";
     const rangeChanged = range !== state.range;
     state.range = range;
     if (view !== state.view && wireFilters._setView) {
       wireFilters._setView(view);
+    }
+    if (h.rivers !== state.rivers && window.GWC_setRiversLayer) {
+      window.GWC_setRiversLayer(h.rivers);
     }
     const feat = resolveBh(h.bh);
     if (feat && feat.properties.station_id !== selectedId) {
@@ -614,6 +697,10 @@
   function statusText(p) {
     const lab = { below: "below normal", near: "near normal", above: "above normal" }[p.status]
       || "no current status";
+    if (p.station_type === "flow") {
+      const river = p.river_name ? escapeHtml(p.river_name) + " · " : "";
+      return river + "RiverCast · " + lab;
+    }
     const fc = p.has_forecast ? " · forecast available" : "";
     return lab + fc;
   }

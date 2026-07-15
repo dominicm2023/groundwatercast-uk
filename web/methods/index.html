@@ -113,10 +113,70 @@
     </section>
 
     <section class="about-sec">
+      <h2>RiverCast — daily low-flow outlooks (pilot)</h2>
+      <p><b>What it is.</b> A second station kind alongside groundwater
+        boreholes: EA river-flow gauges, published with the same
+        below/near/above vocabulary against each gauge's own flow
+        climatology, plus a 14-day probabilistic low-flow fan. v1 publishes
+        only a pilot tranche of southern chalk streams and winterbournes
+        (~50 gauges) — the ones that have passed their own admission gate;
+        the fleet-wide status-only layer is future work.</p>
+      <p><b>The model.</b> One Pastas transfer-function-noise model per gauge,
+        fit on <b>log-flow</b>: a two-pathway structure with a slow FlexModel
+        recharge stress (the same nonlinear recharge engine the borehole
+        models use) plus a fast Gamma-response stress on raw rainfall,
+        summed with AR(1) noise. The fast pathway is what makes ENS rainfall
+        spread genuinely informative for a flashy river response, on top of
+        the slow-memory recharge signal the groundwater side already
+        exploits. Everything downstream — the AR(1) predictive band, member
+        driving, thresholds — operates on log-flow unchanged; values are only
+        exponentiated back to m&sup3;/s at publish time.</p>
+      <p><b>The admission gate.</b> Each candidate gauge is scored on a
+        leakage-safe hindcast over low-flow-season origins (June–October,
+        &ge;6 origins across &ge;3 distinct years), against a
+        <b>naive fixed-rate recession</b> baseline (not persistence or
+        climatology — recession is already a competent low-flow predictor, so
+        beating it is a real skill bar). Each origin is scored twice: a
+        <b>ceiling</b> pass (observed rainfall through the window) and a
+        <b>floor</b> pass (the window's rainfall replaced by day-of-year
+        climatology — the memory-only lower bound). The ceiling trio (skill
+        vs recession, P10&ndash;P90 coverage, band sharpness) decides whether
+        a gauge publishes at all; a gauge that additionally stays robust on
+        the floor (parity with recession, still covered, still sharp even
+        with a worthless rain forecast) is <b>tier-1</b> and publishes with
+        <code>rain_dependent: false</code>. A ceiling-pass gauge that isn't
+        floor-robust is <code>rain_dependent: true</code> — its skill leans
+        on the rain forecast, so treat the band with extra caution. A gauge
+        that fails the ceiling trio does not publish at all.</p>
+      <p><b>Q95 and the headline.</b> The published threshold is <b>Q95</b> —
+        the flow exceeded 95% of the time in the gauge's own full record —
+        computed once per gauge and labelled <code>threshold_source:
+        "q95_proxy"</code>, exactly like the groundwater side's P90 proxy: a
+        climatological reference point, <em>not</em> a licence Hands-off-Flow
+        value (the legal abstraction-restriction trigger some users may
+        separately care about). The headline is <b>P(flow &lt; Q95 within 14
+        days)</b> — the low-flow analogue of the borehole breach probability,
+        but the opposite direction (crossing <em>below</em>, not above).</p>
+      <p><b>Honesty caveats specific to rivers.</b> Published flow is
+        <b>gauged flow, including any abstraction and discharge effects</b> —
+        not naturalised flow, so upstream water-company operations and
+        licensed abstraction are baked into every reading and every forecast.
+        <b>Rating curves</b> (the stage-to-flow conversion every EA flow
+        gauge relies on) are least accurate exactly where this product looks:
+        at low flow. A monthly flow climatology feeds the same status-vs-normal
+        and winterbourne read the groundwater side uses (a gauge with any
+        zero-flow days in its record is flagged <code>winterbourne: true</code>
+        with its typically-dry months). No public seasonal outlook for rivers
+        yet — a shadow archive accrues monthly evidence from pilot day one, and
+        public seasonal launches only once that archive demonstrates skill
+        over closed months, not on a calendar date.</p>
+    </section>
+
+    <section class="about-sec">
       <h2>Data sources &amp; licences</h2>
       <ul class="about-list">
-        <li><b>Environment Agency Hydrology API</b> — observed groundwater levels and
-          rain gauges (Open Government Licence v3.0).</li>
+        <li><b>Environment Agency Hydrology API</b> — observed groundwater levels,
+          river flow gauges (RiverCast), and rain gauges (Open Government Licence v3.0).</li>
         <li><b>ECMWF Open Data</b> — 51-member IFS ENS forcing (CC-BY-4.0).</li>
         <li><b>Copernicus Climate Change Service</b> — ERA5 reanalysis and SEAS5
           seasonal forecasts (modified C3S information).</li>

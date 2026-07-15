@@ -55,6 +55,26 @@ def test_unknown_scope_raises(tmp_path, monkeypatch):
         pass
 
 
+def test_short_record_ids_band(tmp_path, monkeypatch):
+    """Short-record candidates are those in [min_fan, min_full) rows — d (2 rows)
+    with the band [2, 5); the calibratable a/b/c/noco (5 rows) fall outside it."""
+    _setup(tmp_path, monkeypatch)
+    assert sc.short_record_ids(min_fan=2, min_full=5) == {"d"}
+    # a station below the fan floor is not even a candidate
+    assert sc.short_record_ids(min_fan=3, min_full=5) == set()
+
+
+def test_include_short_adds_candidates_to_scope(tmp_path, monkeypatch):
+    """include_short widens a scope by the short-record candidate band; the gate
+    that admits/rejects each candidate runs later in build_pastas_models."""
+    _setup(tmp_path, monkeypatch)
+    monkeypatch.setattr(sc, "MIN_ROWS_FAN", 2)
+    base = sc.select_scope("fleet", min_rows=5)
+    wide = sc.select_scope("fleet", min_rows=5, include_short=True)
+    assert "d" not in base                       # d (2 rows) below the full bar
+    assert wide == base | {"d"}                  # …but is a short-record candidate
+
+
 def test_known_bad_stations_dropped_from_every_scope(tmp_path, monkeypatch):
     """Register entries (datum/scaling shifts) are excluded even from the
     user scope — their live readings aren't comparable with the history the

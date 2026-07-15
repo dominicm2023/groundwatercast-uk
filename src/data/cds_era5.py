@@ -71,21 +71,17 @@ def build_request(variable: str, statistic: str, years: list[int],
 
 
 def _client():
+    # Hardened construction (src/data/cds_client.py): socket-timeout backstop +
+    # bounded retry budget. A silent CDS socket hang wedged refresh_pet /
+    # refresh_seasonal_inputs for hours (2026-07-07/08) — a hang raises nothing,
+    # so the per-point skip-tolerance alone can't save the chain.
     try:
-        import cdsapi
+        from src.data.cds_client import hardened_client
+        return hardened_client()
     except ImportError as exc:  # pragma: no cover - env-dependent
         raise ImportError("CDS fetch needs the 'cdsapi' package "
                           "(pip install cdsapi) and a CDS API key — "
                           "https://cds.climate.copernicus.eu") from exc
-    # quiet=True mutes the per-poll INFO chatter the CDS/datastores client emits
-    # ("Request ID is…", "status updated to running/successful", the ARCO
-    # boilerplate) that otherwise floods cron_forecast.log; warnings/errors still
-    # surface. Guarded so a future cdsapi without the kwarg can't break the
-    # unattended pipeline.
-    try:
-        return cdsapi.Client(quiet=True)
-    except TypeError:
-        return cdsapi.Client()
 
 
 _COST_MARKERS = ("cost limit", "too large", "request is too large",

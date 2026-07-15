@@ -68,6 +68,9 @@
         <label class="chk geo-toggle" id="geo-toggle-row">
           <input type="checkbox" id="geology-toggle" /> Aquifer geology
         </label>
+        <label class="chk rivers-toggle" id="rivers-toggle-row" hidden>
+          <input type="checkbox" id="rivers-toggle" /> RiverCast &middot; rivers (pilot)
+        </label>
         <details id="watchlist-panel" class="wl-panel">
           <!-- populated by watchlist.js (GWC_WATCH.mountPanel, after featById exists) -->
         </details>
@@ -87,6 +90,11 @@
           <div class="legend-row"><span class="sq" data-geo="Secondary"></span> Secondary</div>
           <div class="legend-row"><span class="sq" data-geo="Low"></span> Low</div>
           <div class="geo-note">Indicative, from BGS 625k bedrock geology (OGL)</div>
+        </div>
+        <div id="rivers-legend" hidden>
+          <div class="legend-title geo-title">RiverCast pilot</div>
+          <div class="legend-row"><span class="diamond"></span> Flow gauge (colour = status vs its own flow climatology)</div>
+          <div class="geo-note">Gauged flow, including any abstraction and discharge effects. Rating curves are least accurate at low flows. Indicative &amp; experimental.</div>
         </div>
       </div>
       </div>
@@ -111,6 +119,11 @@
       <h2>About GroundwaterCast UK</h2>
       <p id="about-disclaimer" class="disclaimer"></p>
       <div id="about-coverage" class="caption"></div>
+      <p><b>New — RiverCast</b> (pilot): daily low-flow outlooks for a first
+         tranche of gated chalk streams &amp; winterbournes. Gauged flow,
+         including any abstraction and discharge effects; rating curves are
+         least accurate at low flows. Switch it on with the "RiverCast ·
+         rivers (pilot)" toggle.</p>
       <p>One view per borehole across three horizons in a single vocabulary —
          <b>below / near / above normal</b>:</p>
       <ul>
