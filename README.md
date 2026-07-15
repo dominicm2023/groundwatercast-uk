@@ -60,9 +60,14 @@ free Copernicus account.
 | **Environment Agency Hydrology** | live groundwater levels + rain gauges | OGL v3 |
 
 The story of getting there — off a convenient-but-non-commercial API onto these
-free commercial-clean sources — is in [`docs/free_data_migration.md`](docs/free_data_migration.md).
+free commercial-clean sources — is in
+[`docs/free_data_migration.md`](docs/free_data_migration.md), including the one
+documented residual (a dormant non-commercial bias-fit path used only when a
+brand-new station is added, scheduled for retirement).
 
 ## Quick start
+
+Requires **Python ≥ 3.13**.
 
 ```bash
 git clone https://github.com/dominicm2023/groundwatercast-uk.git && cd groundwatercast-uk
@@ -184,6 +189,7 @@ audit, small testable modules.
 
 ## Citation & licence
 
-MIT — see [LICENSE](LICENSE), including the third-party data-attribution table
-(EA OGL v3, ONS OGL v3, ECMWF CC-BY-4.0, Copernicus). If you use the software or
-its forecasts, please cite it — see [`CITATION.cff`](CITATION.cff).
+MIT — see [LICENSE](LICENSE); the third-party data-attribution table
+(EA OGL v3, ONS OGL v3, ECMWF CC-BY-4.0, Copernicus) is in [NOTICE](NOTICE).
+If you use the software or its forecasts, please cite it — see
+[`CITATION.cff`](CITATION.cff).

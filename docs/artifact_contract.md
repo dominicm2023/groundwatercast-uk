@@ -32,14 +32,13 @@ repository's own version.
 
 Consumers should read `meta.json` first and check `schema_version` before
 parsing anything else. (The published pack schemas are one of the
-repo-versioned surfaces — see `docs/product/product_definition.md` §4.2.)
+repo-versioned surfaces.)
 
 ## 2.1 RiverCast — two station kinds
 
 The pack publishes two kinds of station: groundwater boreholes (the original
-contract, unchanged) and flow gauges (**RiverCast**, Stage 7 of
-`docs/product/lowflow/build_plan.md`, additive throughout, no bump). A
-`station_type` property distinguishes them:
+contract, unchanged) and flow gauges (**RiverCast** — additive throughout,
+no bump). A `station_type` property distinguishes them:
 
 - `station_type` is **absent** on every groundwater row/feature — "absent
   means gw". A GW row's property set is byte-identical to before RiverCast
