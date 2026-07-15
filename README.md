@@ -1,5 +1,7 @@
 # 💧 GroundwaterCast UK
 
+[![tests](https://github.com/dominicm2023/groundwatercast-uk/actions/workflows/tests.yml/badge.svg)](https://github.com/dominicm2023/groundwatercast-uk/actions/workflows/tests.yml)
+
 **Per-borehole probabilistic groundwater forecasts for England — a 14-day daily
 fan and a 6-month seasonal outlook — built entirely on free,
 commercially-licensed open data.**
