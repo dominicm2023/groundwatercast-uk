@@ -6,8 +6,8 @@
 
 [project]
 name = "groundwatercast"
-version = "0.1.0"
-description = "GroundwaterCast UK — daily 14-day probabilistic groundwater forecasts and a daily risk index for UK boreholes, built entirely on open data (EA hydrology APIs, ECMWF ensemble, Pastas TFN recharge). Streamlit dashboard."
+version = "1.0.0"
+description = "GroundwaterCast UK — daily 14-day probabilistic groundwater forecasts and a 6-month seasonal outlook for England's boreholes, plus RiverCast low-flow outlooks for chalk streams, built entirely on open data (EA Hydrology, ECMWF ENS, Copernicus ERA5/SEAS5, Pastas TFN recharge)."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.13"
