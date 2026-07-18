@@ -1,5 +1,16 @@
 # Abstraction-influenced-site screening (roadmap H7) — design note
 
+> **Update 2026-07-18: the capture-zone screen is BUILT** (§Capture-zone screen
+> below). `scripts/build_abstraction_influence.py` joins the NALD licence
+> points to every catalogued groundwater borehole via volume-banded influence
+> radii → `data/processed/abstraction_influence.csv` (per-borehole nearest
+> licence, in-radius count + deduped licensed capacity, tier
+> none/possible/likely). The amplitude detector is **re-enabled**, gated on
+> licence proximity (proximity prior × amplitude evidence): the 575-station
+> re-run flags **11 (4 HIGH)** vs the ungated 125 — the gate suppressed exactly
+> the 114 excess-amplitude boreholes with no licence in range. Still
+> report-only; the register remains the only exclusion path.
+
 > **Update 2026-07-09:** the §3 ingest now EXISTS —
 > `scripts/build_abstraction_points.py` → `data/processed/abstraction_points.csv`
 > (EA Water Rights Trading NALD extract, OGL v3, Jan 2025: 11,597 licences,
@@ -9,10 +20,10 @@
 > awaits the §5 decision. Caveats to honour: >100 m³/d returns-submitting
 > licences only; security-sensitive supplies excluded; capacity ≠ pumping.
 
-> **Status:** scoped 2026-06-17; prototyped 2026-06-17. **Shipped:** the
-> register-reason path (`abstraction_influenced`). **Experimental & disabled:** the
-> advisory amplitude detector — it over-flags natural Chalk on the real fleet (see
-> §Findings). The EA-licence ingest (§3) remains the recommended operational path.
+> **Status:** scoped 2026-06-17; prototyped 2026-06-17; **capture-zone screen +
+> licence-gated detector shipped 2026-07-18.** Shipped earlier: the
+> register-reason path (`abstraction_influenced`) — still the only thing that
+> excludes a site.
 
 ## Findings from the prototype (2026-06-17)
 
@@ -36,9 +47,105 @@ Tightening the radius reduces but does not remove the confounder.
 **Conclusion:** the daily-data amplitude heuristic is **not operationally trustworthy
 without a depth-to-water / hydrogeological-domain covariate** (or the EA-licence ingest,
 §3). The detector is therefore **kept disabled** (`enabled: false`) as a validated
-primitive + documented negative result. What ships and works today is the
+primitive + documented negative result. *(Superseded 2026-07-18: the EA-licence
+ingest landed and the detector is re-enabled behind the licence-proximity gate —
+see §Capture-zone screen above.)* What ships and works today is the
 register-reason path — a human confirms a pumped site and adds it to
 `known_bad_stations.yaml` with `reason: abstraction_influenced`.
+
+## Capture-zone screen (shipped 2026-07-18)
+
+`src/diagnostics/abstraction_influence.py` + `scripts/build_abstraction_influence.py`
+→ `data/processed/abstraction_influence.csv`, config block
+`diagnostics.abstraction_influence`. A **screen, not a drawdown model**: each
+Groundwater-source licence gets an influence radius banded by its licensed
+daily volume, and a borehole inside any licence's radius is a candidate.
+
+### Radius bands and why (chalk-typical transmissivity reasoning)
+
+| licensed daily volume | radius | reasoning |
+|---|---|---|
+| < 500 m³/d | 500 m | Steady-state capture-zone width in a regional gradient is `W ≈ Q/(T·i)`. With chalk-typical `T` ≈ 500–2,000 m²/d and gradient `i` ≈ 0.002–0.01 (`T·i` ~ 5 m²/d per m), Q = 500 m³/d supports `W` ≈ 100 m — 500 m is a ×5-generous screen radius. |
+| 500–5,000 m³/d | 1,500 m | Same formula at Q = 5,000 gives `W` ≈ 1,000 m. 1,500 m also sits inside the seasonal radius-of-influence `r ≈ 1.5·√(T·t/S)` (T = 1,000 m²/d, t = 180 d pumping season, unconfined chalk S ≈ 0.02 → r ≈ 4.5 km), where a Theis estimate puts seasonal drawdown for a full-rate 5,000 m³/d abstraction at ~1 m — detectable against chalk seasonal swings. |
+| ≥ 5,000 m³/d | 3,000 m | Public-supply scale. Capture width `W` reaches multiple km; 3 km is deliberately *conservative* vs the radius-of-influence so the screen doesn't blanket whole valleys — the point is a review queue, not coverage maximisation. |
+
+Bands are config-driven (`radius_bands_m`) and err toward catching candidates:
+the output is report-only, so a false candidate costs one human glance, while a
+missed pumped site costs a confidently-wrong public forecast. An unquantified
+licence falls into the smallest band (the extract's floor is >100 m³/d), never
+out of the screen.
+
+### Tiers
+
+- **likely** — a licence point within `likely_inner_fraction` (0.5×) of its
+  radius, or deduped in-radius licensed capacity ≥ `likely_capacity_m3d`
+  (5,000 m³/d).
+- **possible** — ≥1 licence within its banded radius, outer ring only.
+- **none** — no Groundwater licence in range. NB: the extract covers >100 m³/d
+  *returns-submitting* licences only (security-sensitive supplies excluded), so
+  `none` means "no large returns-submitting licence nearby", **not** "no
+  abstraction".
+
+Fleet result (2026-07-18, 3,317 catalogued GW boreholes, Jan-2025 vintage):
+**587 likely / 335 possible / 2,395 none.**
+
+Invariants honoured from the ingest: capacity figures are **licensed maxima,
+not actual pumping** (every CSV row carries `capacity_basis=
+licensed_max_not_actual_pumping`); multi-point licences repeat licence-level
+maxima per row, so capacity is deduped per `licence_no` and **never summed
+across rows** (pinned in `tests/test_abstraction_influence.py`); only
+`licence_no` (the public join key) is carried — no holder data.
+
+**Same-aquifer check: not feasible with this extract** — the NALD rows carry
+no aquifer attribute, so the join is source-filter (Groundwater) + distance
+banding only. A future refinement could spatially join licences to BGS aquifer
+polygons and require concordance with the borehole's `aquifer_designation`;
+noted, not built.
+
+### Detector re-enabled behind the licence gate
+
+`classify()` now takes the borehole's `influence_tier` as a **proximity
+prior**: excess amplitude with tier `none` → `excess_amplitude_no_licence`,
+severity none (fails closed on a missing tier); tier `possible` → severity
+downgraded one notch; tier `likely` → full ratio-based severity. Config:
+`abstraction_screen.licence_gate` (`enabled`, `min_tier`,
+`downgrade_possible`); `enabled: true` restored on the screen itself.
+
+**575-station re-run (same population as the 2026-06-17 negative result):**
+
+| | ungated (2026-06-17) | licence-gated (2026-07-18) |
+|---|---|---|
+| flagged | 125 (61 HIGH) | **11 (4 HIGH)** |
+| suppressed as no-licence | — | 114 |
+
+The licence prior is precisely the external covariate the negative result
+asked for. The 4 HIGH: College Wood (×6.49, licence 2.7 km), Norton Grange
+Farm (×6.0, licence 8 m), Chilgrove House (×5.72, licence 227 m), Hoaden
+Court (×5.32, licence 20 m). **Caution that keeps this report-only:** the gate
+reduces but cannot eliminate natural-Chalk false positives — Chilgrove House
+is a BGS index borehole whose huge seasonal swing is substantially natural,
+and it still flags because a real licence sits 227 m away. Licence proximity
+is a prior, not evidence of influence; the human `metadata_check` stays the
+arbiter, and only the register excludes.
+
+### Pack badge decision: **no badge (for now)**
+
+Considered surfacing a quiet per-borehole "abstraction-screened" badge in the
+published pack; decided **against**, on the same honesty logic as the rest of
+the screen: licence proximity is licensed *capacity* near the borehole, not
+observed pumping, and an unreviewed screen tier published as a per-site label
+would over-claim (28% of the fleet would carry it). Confirmed sites already
+leave the pack entirely via the register. Revisit once a human-reviewed cohort
+exists — a *reviewed-and-confirmed-but-still-published* site is the right
+badge candidate (artifact-contract addition would be additive, no
+`SCHEMA_VERSION` bump).
+
+### Issue tracking
+
+This work resolves issue **#6** ("Abstraction-influenced borehole screening:
+depth-to-water covariate or EA licence ingest") via the second of its two
+candidate unlocks — the EA-licence ingest: capture-zone screen + licence-gated
+detector, 125 → 11 flags on the 575-station re-run.
 
 ## The gap (from the reference-system sweep)
 

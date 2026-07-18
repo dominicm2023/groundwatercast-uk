@@ -1,20 +1,24 @@
 """Run the abstraction screen over the fleet -> outputs/abstraction_flags.csv (H7).
 
-⚠️ EXPERIMENTAL — disabled by default in config (enabled: false). On the real fleet
-the amplitude-vs-aquifer-class heuristic over-flags natural high-amplitude Chalk
-(575 evaluated → 125 flagged at 25 km), so it is NOT operational. The metric is
-validated on synthetic series; this script is kept for future refinement once a
-depth-to-water / hydrogeological-domain covariate or the EA abstraction-licence
-ingest is available. See docs/abstraction_screen_design.md. Flip `enabled` only for
-research runs.
+RE-ENABLED 2026-07-18 behind the licence-proximity gate: each borehole's
+``influence_tier`` from the H7 capture-zone screen
+(scripts/build_abstraction_influence.py -> data/processed/abstraction_influence.csv,
+run it first) is passed into ``classify`` as the proximity prior, so excess
+amplitude only flags where a licensed groundwater abstraction is actually in
+range. Ungated history (2026-06-17): 575 evaluated → 125 flagged at 25 km —
+over-flagged natural high-amplitude Chalk. Licence proximity = licensed
+capacity nearby, NOT observed pumping (>100 m³/day returns-submitting licences
+only). See docs/abstraction_screen_design.md.
 
 Report-only: this changes NOTHING in the forecast. It surfaces boreholes whose
-seasonal drawdown amplitude greatly exceeds their SAME-aquifer-class neighbours' —
-the cyclic / seasonal-pumping case the trend screen misses — and recommends a human
+seasonal drawdown amplitude greatly exceeds their SAME-aquifer-class neighbours'
+AND that sit within a licensed abstraction's banded radius — the cyclic /
+seasonal-pumping case the trend screen misses — and recommends a human
 metadata / abstraction-licence check. Confirmed sites are added to
 data/external/known_bad_stations.yaml by hand (reason: abstraction_influenced),
 which scope.py / exclusions.py already honour.
 
+    python -m scripts.build_abstraction_influence   # the proximity prior
     python -m scripts.build_abstraction_screen
 
 Reuses trend_screen.screen_series for the per-borehole metrics (seasonal amplitude,
@@ -40,6 +44,8 @@ _CSV_COLS = [
     "station_id", "station_name", "lat", "lon", "aquifer_class", "n_obs",
     "record_years", "first_date", "last_date", "seasonal_amp_m", "neighbour_count",
     "neighbour_median_amp_m", "amp_ratio", "rain_corr", "amplitude_isolation_class",
+    "influence_tier", "nearest_licence_km", "licences_within_radius",
+    "licensed_daily_m3_within",
     "provenance_class", "recommended_action", "severity", "already_in_register",
 ]
 
@@ -95,6 +101,23 @@ def main(argv=None) -> int:
         metrics[sid] = m
     print(f"evaluated {len(metrics)} boreholes (>= {min_years} yr, >= {min_obs} obs)")
 
+    gate = cfg.get("licence_gate", {})
+    influence = {}
+    if gate.get("enabled", False):
+        inf_path = ROOT / gate.get("influence_path",
+                                   "data/processed/abstraction_influence.csv")
+        if not inf_path.exists():
+            print(f"ERROR: licence gate enabled but {inf_path.relative_to(ROOT)} "
+                  "missing — run scripts.build_abstraction_influence first.")
+            return 2
+        inf = pd.read_csv(inf_path, dtype={"station_id": str})
+        influence = inf.set_index("station_id").to_dict("index")
+        n_t = inf["influence_tier"].value_counts()
+        print(f"licence gate ON (min_tier={gate.get('min_tier', 'possible')}): "
+              f"{len(inf)} boreholes screened — likely {int(n_t.get('likely', 0))} / "
+              f"possible {int(n_t.get('possible', 0))} / none {int(n_t.get('none', 0))}"
+              " [licensed capacity, not actual pumping]")
+
     excluded = excluded_station_ids()
     nb = cfg.get("neighbour", {})
     radius = float(nb.get("radius_km", 25.0))
@@ -114,8 +137,10 @@ def main(argv=None) -> int:
             if same_aq and aq_col and meta.loc[nsid, aq_col] != subj_aq:
                 continue
             namps.append(metrics[nsid]["seasonal_amp_m"])
+        inf = influence.get(sid, {})
+        tier = inf.get("influence_tier", "none")
         iso = amplitude_isolation(m["seasonal_amp_m"], namps, cfg)
-        cls = classify({**m, **iso}, cfg)
+        cls = classify({**m, **iso, "influence_tier": tier}, cfg)
         rows.append({
             "station_id": sid,
             "station_name": meta.loc[sid, "station_name"],
@@ -129,12 +154,20 @@ def main(argv=None) -> int:
             "amp_ratio": _round(iso["amp_ratio"], 2),
             "rain_corr": _round(m.get("rain_corr", np.nan), 3),
             "amplitude_isolation_class": iso["amplitude_isolation_class"],
+            "influence_tier": tier,
+            "nearest_licence_km": inf.get("nearest_licence_km"),
+            "licences_within_radius": inf.get("licences_within_radius"),
+            "licensed_daily_m3_within": inf.get("licensed_daily_m3_within"),
             "provenance_class": cls["provenance_class"],
             "recommended_action": cls["recommended_action"],
             "severity": cls["severity"], "already_in_register": sid in excluded,
         })
 
     df = pd.DataFrame(rows, columns=_CSV_COLS)
+    n_gated_out = int((df["provenance_class"] == "excess_amplitude_no_licence").sum())
+    if gate.get("enabled", False):
+        print(f"licence gate suppressed {n_gated_out} excess-amplitude boreholes "
+              "with no licensed groundwater abstraction in range")
     emit = cfg.get("emit_min_severity", "low")
     df = df[df["severity"].apply(lambda s: passes_severity(s, emit))]
     df = (df.assign(_s=df["severity"].map(_SEV_RANK))
@@ -150,7 +183,8 @@ def main(argv=None) -> int:
         tag = "  [in register]" if r["already_in_register"] else ""
         print(f"  HIGH {str(r['station_name'])[:22]:<22} amp={r['seasonal_amp_m']} "
               f"vs nbr {r['neighbour_median_amp_m']} (×{r['amp_ratio']}) "
-              f"aq={r['aquifer_class']}{tag}")
+              f"aq={r['aquifer_class']} tier={r['influence_tier']} "
+              f"lic@{r['nearest_licence_km']}km{tag}")
 
     hist = ROOT / cfg.get("history_path", "outputs/abstraction_flags_history.parquet")
     stamp = pd.Timestamp.now().normalize()

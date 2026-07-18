@@ -1,16 +1,20 @@
 """Abstraction-influenced-site screen (roadmap H7, report-only).
 
-⚠️ EXPERIMENTAL — disabled by default (``config.diagnostics.abstraction_screen.
-enabled: false``). The metric below is validated on synthetic series
-(``tests/test_abstraction_screen.py``), but on the real UK fleet it OVER-FLAGS
-natural high-amplitude Chalk: 575 boreholes evaluated → 125 flagged at a 25 km
-neighbour radius (51 even at 6 km), because the available 3-value aquifer class
-(Principal/Secondary/Low) can't separate downland Chalk (10–30 m natural seasonal
-swing) from valley/confined Chalk. The amplitude heuristic needs a depth-to-water /
-hydrogeological-domain covariate, or the EA abstraction-licence ingest, before it is
-operationally trustworthy. Kept as a validated primitive + documented finding; the
-**register-reason path (``abstraction_influenced`` in known_bad_stations.yaml) is the
-part that ships and works today**. See ``docs/abstraction_screen_design.md``.
+RE-ENABLED 2026-07-18 behind the **licence-proximity gate**: amplitude evidence
+now only flags a site where the H7 capture-zone screen
+(``src.diagnostics.abstraction_influence`` → ``abstraction_influence.csv``)
+puts a licensed groundwater abstraction within its volume-banded radius —
+a proximity *prior* multiplying the amplitude *evidence*. This closes the
+2026-06-17 negative result: ungated, the metric over-flagged natural
+high-amplitude Chalk (575 evaluated → 125 flagged at 25 km / 51 at 6 km)
+because the 3-value aquifer class (Principal/Secondary/Low) can't separate
+downland Chalk (10–30 m natural swing) from valley/confined Chalk. The licence
+prior is exactly the external covariate that finding asked for. Caveats travel:
+licence proximity means *licensed capacity* nearby, not observed pumping, and
+the extract covers >100 m³/day returns-submitting licences only. The
+**register-reason path (``abstraction_influenced`` in known_bad_stations.yaml)
+remains the only thing that excludes a site**. See
+``docs/abstraction_screen_design.md``.
 
 
 HOUK deliberately excludes heavily-pumped boreholes: at a site dominated by local
@@ -48,7 +52,10 @@ from __future__ import annotations
 
 import numpy as np
 
+from src.diagnostics.abstraction_influence import tier_at_least
+
 _SEV_RANK = {"high": 3, "medium": 2, "low": 1, "none": 0}
+_SEV_DOWN = {"high": "medium", "medium": "low", "low": "low"}
 
 
 def amplitude_isolation(subject_amp: float, neighbour_amps, cfg: dict) -> dict:
@@ -92,7 +99,15 @@ def classify(m: dict, cfg: dict) -> dict:
 
     Only an ``excess``-amplitude, sufficiently-long record is flagged, and only
     ever for a human ``metadata_check`` — never auto-exclusion. Severity scales
-    with how far the swing exceeds the neighbourhood (``amp_ratio``)."""
+    with how far the swing exceeds the neighbourhood (``amp_ratio``).
+
+    With ``cfg["licence_gate"]`` enabled, ``m["influence_tier"]`` (from the H7
+    capture-zone screen) acts as the proximity prior: an excess-amplitude site
+    with no licensed groundwater abstraction in range is recorded as
+    ``excess_amplitude_no_licence`` (severity none — the very cohort the
+    ungated 2026-06-17 run over-flagged), and a merely-``possible`` site is
+    downgraded one severity notch vs ``likely``. A missing tier is treated as
+    ``none``: no licence evidence, no flag."""
     iso = m.get("amplitude_isolation_class", "no_neighbours")
     ratio = m.get("amp_ratio", np.nan)
     years = m.get("record_years", np.nan)
@@ -103,12 +118,23 @@ def classify(m: dict, cfg: dict) -> dict:
         return dict(severity="none", provenance_class="not_abstraction_suspect",
                     recommended_action="none")
 
+    gate = cfg.get("licence_gate", {})
+    tier = m.get("influence_tier") or "none"
+    if gate.get("enabled", False):
+        if not tier_at_least(tier, gate.get("min_tier", "possible")):
+            return dict(severity="none",
+                        provenance_class="excess_amplitude_no_licence",
+                        recommended_action="none")
+
     if ratio >= float(cfg["amp_ratio_high"]):
         sev = "high"
     elif ratio >= float(cfg["amp_ratio_med"]):
         sev = "medium"
     else:
         sev = "low"
+    if (gate.get("enabled", False) and gate.get("downgrade_possible", True)
+            and tier == "possible"):
+        sev = _SEV_DOWN[sev]
     return dict(severity=sev, provenance_class="abstraction_suspect",
                 recommended_action="metadata_check")
 

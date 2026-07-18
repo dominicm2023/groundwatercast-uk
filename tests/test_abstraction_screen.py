@@ -79,6 +79,58 @@ class TestClassify:
 
 
 # ---------------------------------------------------------------------------
+# Licence-proximity gate (H7 capture-zone screen as the proximity prior)
+# ---------------------------------------------------------------------------
+
+GATED = {**CFG, "licence_gate": dict(enabled=True, min_tier="possible",
+                                     downgrade_possible=True)}
+
+
+class TestLicenceGate:
+    def _m(self, ratio, tier, years=6.0):
+        return dict(amplitude_isolation_class="excess", amp_ratio=ratio,
+                    record_years=years, influence_tier=tier)
+
+    def test_excess_without_licence_not_flagged(self):
+        # The 2026-06-17 over-flag cohort: natural high-amplitude Chalk with
+        # no licensed abstraction in range must read severity none.
+        c = ab.classify(self._m(6.0, "none"), GATED)
+        assert c["severity"] == "none"
+        assert c["provenance_class"] == "excess_amplitude_no_licence"
+        assert c["recommended_action"] == "none"
+
+    def test_excess_with_likely_licence_flags_full_severity(self):
+        c = ab.classify(self._m(4.5, "likely"), GATED)
+        assert c["severity"] == "high"
+        assert c["provenance_class"] == "abstraction_suspect"
+        assert c["recommended_action"] == "metadata_check"  # never exclude
+
+    def test_possible_tier_downgrades_one_notch(self):
+        assert ab.classify(self._m(4.5, "possible"), GATED)["severity"] == "medium"
+        assert ab.classify(self._m(3.2, "possible"), GATED)["severity"] == "low"
+        assert ab.classify(self._m(2.6, "possible"), GATED)["severity"] == "low"
+
+    def test_missing_tier_fails_closed(self):
+        m = dict(amplitude_isolation_class="excess", amp_ratio=6.0,
+                 record_years=6.0)  # no influence_tier key at all
+        c = ab.classify(m, GATED)
+        assert c["severity"] == "none"
+        assert c["provenance_class"] == "excess_amplitude_no_licence"
+
+    def test_gate_disabled_preserves_ungated_behaviour(self):
+        cfg = {**CFG, "licence_gate": dict(enabled=False)}
+        c = ab.classify(self._m(4.5, "none"), cfg)
+        assert c["severity"] == "high"
+        assert c["provenance_class"] == "abstraction_suspect"
+
+    def test_min_tier_likely_excludes_possible(self):
+        cfg = {**CFG, "licence_gate": dict(enabled=True, min_tier="likely")}
+        c = ab.classify(self._m(4.5, "possible"), cfg)
+        assert c["severity"] == "none"
+        assert c["provenance_class"] == "excess_amplitude_no_licence"
+
+
+# ---------------------------------------------------------------------------
 # Synthetic end-to-end discrimination
 # ---------------------------------------------------------------------------
 
