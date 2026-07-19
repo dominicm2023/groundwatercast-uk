@@ -31,6 +31,7 @@
     <div class="topbar-meta">
       <span id="national-note" class="asof national-note" hidden></span>
       <span id="data-asof" class="asof">loading…</span>
+      <a class="about-link" href="/rivers/">Rivers</a>
       <a class="about-link" href="/browse/">Browse</a>
       <a class="about-link methods-link" href="/methods/">Methods</a>
       <a class="about-link" href="#" id="about-toggle">About</a>
@@ -69,7 +70,7 @@
           <input type="checkbox" id="geology-toggle" /> Aquifer geology
         </label>
         <label class="chk rivers-toggle" id="rivers-toggle-row" hidden>
-          <input type="checkbox" id="rivers-toggle" /> RiverCast &middot; rivers (pilot)
+          <input type="checkbox" id="rivers-toggle" /> RiverCast &middot; rivers view
         </label>
         <details id="watchlist-panel" class="wl-panel">
           <!-- populated by watchlist.js (GWC_WATCH.mountPanel, after featById exists) -->
@@ -92,9 +93,10 @@
           <div class="geo-note">Indicative, from BGS 625k bedrock geology (OGL)</div>
         </div>
         <div id="rivers-legend" hidden>
-          <div class="legend-title geo-title">RiverCast pilot</div>
+          <div class="legend-title geo-title">RiverCast &middot; river flow</div>
           <div class="legend-row"><span class="diamond"></span> Flow gauge (colour = status vs its own flow climatology)</div>
-          <div class="geo-note">Gauged flow, including any abstraction and discharge effects. Rating curves are least accurate at low flows. Indicative &amp; experimental.</div>
+          <div class="legend-row"><span class="riverline"></span> Gauged river (OS Open Rivers, OGL)</div>
+          <div class="geo-note">Boreholes stay faintly visible &mdash; chalk-stream flow is groundwater draining. Gauged flow, including any abstraction and discharge effects. Rating curves are least accurate at low flows. Indicative &amp; experimental.</div>
         </div>
       </div>
       </div>

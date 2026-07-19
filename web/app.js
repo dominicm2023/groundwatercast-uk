@@ -92,9 +92,21 @@
   function opacityForFrame(i) {
     return ["at", i, ["get", "op_seq"]];
   }
+  // Borehole-dot opacity has two writers — the timeline scrubber (per-feature
+  // confidence × lead-time fade) and the rivers view (flat dim). Track the
+  // timeline's current expression so switching the rivers view OFF restores
+  // the fade instead of clobbering it with a constant.
+  const RIVERS_DIM = 0.35;
+  let dotBaseOpacity = 0.95;             // updated by setFrame once the timeline runs
+  function applyDotOpacity() {
+    map.setPaintProperty("stations-dot", "circle-opacity",
+      state.rivers ? RIVERS_DIM : dotBaseOpacity);
+  }
   function setFrame(i) {
     map.setPaintProperty("stations-dot", "circle-color", colorForFrame(i));
-    map.setPaintProperty("stations-dot", "circle-opacity", opacityForFrame(i));
+    dotBaseOpacity = opacityForFrame(i);
+    // rivers view keeps the boreholes dimmed even while the timeline scrubs
+    applyDotOpacity();
     const lbl = document.getElementById("tl-frame");
     const note = document.getElementById("tl-note");
     const title = document.getElementById("legend-title");
@@ -185,12 +197,17 @@
     setFrame(0);
   }
 
-  // -- RiverCast (rivers pilot) layer: distinct diamond markers for flow
-  // gauges — colour still encodes below/near/above (one vocabulary), the
-  // SHAPE is what marks a gauge as a river rather than a borehole. Toggled
-  // independently of the borehole view-mode/search filters: v1 is a small,
-  // fixed pilot list (~50 gauges), always shown together when the layer is
-  // on. A homepage teaser / shared link can pre-activate it via #rivers=1.
+  // -- RiverCast rivers VIEW: distinct diamond markers for flow gauges —
+  // colour still encodes below/near/above (one vocabulary), the SHAPE is
+  // what marks a gauge as a river rather than a borehole. Switching the view
+  // on also (a) dims the boreholes — dimmed, never hidden: chalk-stream
+  // baseflow IS groundwater draining, and the borehole↔river link is the
+  // product's edge — (b) emphasises the diamonds, (c) lazy-loads the river
+  // polylines (pack/rivers.geojson, OS Open Rivers, same fetch-on-first-use
+  // pattern as the geology layer), and (d) shows the flow-vocabulary legend.
+  // Toggled independently of the borehole view-mode/search filters; the
+  // whole gated fleet shows together. /rivers/ and shared links
+  // pre-activate it via #rivers=1.
   function setupRiverLayer(geojson) {
     const hasFlow = geojson.features.some((f) => f.properties.station_type === "flow");
     const row = document.getElementById("rivers-toggle-row");
@@ -228,12 +245,62 @@
       },
     });
 
+    // River polylines — lazy: fetched only the first time the view turns on
+    // (mirrors wireGeology), gated on the pack actually shipping the file.
+    let riversLoaded = false, riversLoading = false;
+    const riversAvailable = () =>
+      META && META.inputs && META.inputs.river_polylines &&
+      META.inputs.river_polylines.status === "ok";
+    function ensureRiverLines(then) {
+      if (riversLoaded || riversLoading || !riversAvailable()) { then(); return; }
+      riversLoading = true;
+      fetch(`${PACK}/rivers.geojson`)
+        .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then((gj) => {
+          map.addSource("rivers", { type: "geojson", data: gj });
+          // beneath the station layers so dots/diamonds stay clickable on top
+          map.addLayer({
+            id: "rivers-lines", type: "line", source: "rivers",
+            layout: { "line-cap": "round", "line-join": "round", visibility: "none" },
+            paint: {
+              "line-color": "#4a90c4",
+              "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.7, 9, 1.8, 12, 3],
+              "line-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0.5, 8, 0.75],
+            },
+          }, "stations-ring");
+          riversLoaded = true;
+        })
+        .catch(() => {})                     // polylines are a nicety — degrade silently
+        // `then` re-reads state.rivers at completion time: if the user
+        // toggled the view off while the fetch was in flight, the lines must
+        // NOT appear.
+        .finally(() => { riversLoading = false; then(); });
+    }
+
     const legend = document.getElementById("rivers-legend");
+    const legendBox = document.getElementById("legend");
+    const showLines = () => {
+      // reads LIVE state (not a captured `on`) so an in-flight polyline fetch
+      // that completes after the user toggled the view off stays hidden
+      if (map.getLayer("rivers-lines")) {
+        map.setLayoutProperty("rivers-lines", "visibility",
+          state.rivers ? "visible" : "none");
+      }
+    };
     const setOn = (on) => {
+      state.rivers = on;
       map.setLayoutProperty("stations-flow-dot", "visibility", on ? "visible" : "none");
+      // rivers view: gauges emphasised, boreholes dimmed but PRESENT
+      map.setLayoutProperty("stations-flow-dot", "icon-size", on
+        ? ["interpolate", ["linear"], ["zoom"], 5, 0.55, 10, 1.0]
+        : ["interpolate", ["linear"], ["zoom"], 5, 0.4, 10, 0.75]);
+      applyDotOpacity();
+      map.setPaintProperty("stations-dot", "circle-stroke-width", on ? 0.5 : 1);
+      map.setPaintProperty("stations-ring", "circle-stroke-opacity", on ? 0.25 : 1);
+      if (on) ensureRiverLines(showLines); else showLines();
       if (toggle) toggle.checked = on;
       if (legend) legend.hidden = !on;
-      state.rivers = on;
+      if (legendBox) legendBox.classList.toggle("rivers-on", on);
     };
     if (row) row.hidden = false;
     if (toggle) toggle.addEventListener("change", () => { setOn(toggle.checked); Hash.write(); });

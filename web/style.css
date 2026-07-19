@@ -110,6 +110,12 @@ a.brand, a.brand:hover { color: #fff; text-decoration: none; }
   align-items: center; gap: 6px; cursor: pointer; }
 .legend-row .diamond { width: 12px; height: 12px; flex: 0 0 auto;
   background: var(--ink); transform: rotate(45deg); border-radius: 2px; }
+.legend-row .riverline { width: 16px; height: 0; flex: 0 0 auto;
+  border-top: 2px solid #4a90c4; border-radius: 2px; }
+/* rivers VIEW on: the GW-specific legend rows step back (boreholes are dimmed
+   on the map — the legend mirrors that), the flow block reads as primary. */
+#legend.rivers-on .legend-ring,
+#legend.rivers-on .legend-note { opacity: 0.45; }
 
 /* ---- legend ---- */
 #legend {

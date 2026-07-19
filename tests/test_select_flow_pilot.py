@@ -6,7 +6,12 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from scripts.select_flow_pilot import run as run_select, parse_args, select_pilot
+from scripts.select_flow_pilot import (
+    CURATED_OUT,
+    parse_args,
+    run as run_select,
+    select_pilot,
+)
 
 
 def _scan_row(gauge_id, tier, floor_skill, name=None):
@@ -50,6 +55,32 @@ def test_capped_at_pilot_size():
     assert len(pilot) == 50
     # takes the LOWEST floor_skill rows, not an arbitrary 50
     assert pilot["floor_skill"].max() < 50.0
+
+
+def test_default_is_uncapped_full_tier1():
+    # The 2026-07-19 expansion: no cap by default — every tier-1 row (minus
+    # the curation register) is selected, however many there are.
+    scan = _scan([_scan_row(f"g{i}", "tier1", float(i)) for i in range(80)])
+    pilot = select_pilot(scan)
+    assert len(pilot) == 80
+
+
+def test_curated_out_gauges_are_excluded():
+    curated_id = next(iter(CURATED_OUT))
+    scan = _scan([
+        _scan_row(curated_id, "tier1", 0.1, name="Tollgate"),
+        _scan_row("keep-me", "tier1", 0.5),
+    ])
+    pilot = select_pilot(scan)
+    assert pilot["gauge_id"].tolist() == ["keep-me"]
+
+
+def test_curated_out_reasons_are_recorded():
+    # The register is the documentation-of-record for why a gate-passing
+    # gauge is unpublished — every entry must actually say why.
+    assert CURATED_OUT, "curation register unexpectedly empty"
+    for gauge_id, reason in CURATED_OUT.items():
+        assert reason and len(reason) > 20, f"no meaningful reason for {gauge_id}"
 
 
 def test_deterministic_across_repeated_calls():

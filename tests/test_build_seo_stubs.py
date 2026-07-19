@@ -81,33 +81,56 @@ def test_build_smoke(tmp_path):
     bare = {"station": {"station_id": "deadbeef-0000", "name": "Empty BH",
                         "lat": 52.0, "lon": -1.0}, "observed": {"series": []}}
     (pack / "b.json").write_text(json.dumps(bare), encoding="utf-8")
-    # RiverCast gauges are explorer-only in v1: a flow detail file must get NO
-    # stub, NO browse entry and NO sitemap loc (the templates speak GW).
+    # RiverCast expansion (2026-07-19): a flow detail file gets its OWN
+    # flow-vocabulary stub at /r/<slug>/, a browse entry in the rivers
+    # section, and a sitemap loc — via the flow template, never the GW one.
     flow = {"station": {"station_id": "aaaa-flow-1", "station_type": "flow",
                         "name": "Chalkbourne Gauge", "slug": "chalkbourne-gauge",
+                        "river_name": "River Chalkbourne",
+                        "winterbourne": True, "dry_months": [8, 9],
                         "lat": 51.0, "lon": -1.5},
-            "observed": {"unit": "m3/s", "series": [["2026-06-29", 0.42]]}}
+            "status": {"status": "below", "percentile": 4.0, "level": 0.042,
+                       "obs_date": "2026-06-29", "obs_age_days": 1},
+            "observed": {"unit": "m3/s", "series": [["2026-06-29", 0.42]]},
+            "forecast": {"threshold": 0.05, "threshold_source": "q95_proxy",
+                         "p_below_q95_14d": 0.234}}
     (pack / "c.json").write_text(json.dumps(flow), encoding="utf-8")
     web = tmp_path / "web"
     out = web / "b"
     store = tmp_path / "lastmod.json"
     stats = B.build(pack, out, today="2026-06-30", lastmod_store=store,
                     og_manifest=tmp_path / "no-cards.json")   # raises on self-check failure
-    assert stats["stubs"] == 2            # the flow gauge gets NO stub
+    assert stats["stubs"] == 2            # boreholes only in the GW count
+    assert stats["flow_stubs"] == 1
     assert stats["noindex"] == 1          # the empty borehole
     assert (out / "wilgate-green" / "index.html").exists()
     assert (out / "empty-bh" / "index.html").exists()
-    assert not (out / "chalkbourne-gauge").exists()   # flow: skipped entirely
+    assert not (out / "chalkbourne-gauge").exists()   # never through the GW template
+    flow_html = (web / "r" / "chalkbourne-gauge" / "index.html").read_text(encoding="utf-8")
+    assert "River Chalkbourne at Chalkbourne Gauge" in flow_html
+    assert "river flow forecast" in flow_html
+    assert "Gauged flow" in flow_html                  # honesty caveat is static
+    assert "Hands-off-Flow" in flow_html               # Q95-proxy caveat is static
+    assert "Winterbourne" in flow_html and "Aug/Sep" in flow_html
+    # GW-template vocabulary never leaks into the prose (the winterbourne
+    # note may legitimately mention the aquifer — physics, not template —
+    # and /borehole.css is a stylesheet path, not copy)
+    assert "mAOD" not in flow_html
+    assert "Groundwater at" not in flow_html
+    assert "this borehole" not in flow_html.lower()
     # browse + sitemap + robots
     browse = (web / "browse" / "index.html").read_text(encoding="utf-8")
     assert "Browse boreholes" in browse and "/b/wilgate-green/" in browse
-    assert "chalkbourne-gauge" not in browse          # flow: not in browse
+    assert "Rivers &amp; flow gauges" in browse
+    assert "/r/chalkbourne-gauge/" in browse
     sm = (web / "sitemap.xml").read_text(encoding="utf-8")
     assert "<loc>https://groundwatercast.com/b/wilgate-green/</loc>" in sm
     assert "/b/empty-bh/" not in sm       # noindex page excluded from sitemap
-    assert "chalkbourne-gauge" not in sm  # flow: not in the sitemap
-    # home + about + methods + contact + explorer + browse + valley + wilgate-green
-    assert stats["sitemap_urls"] == 8
+    assert "<loc>https://groundwatercast.com/r/chalkbourne-gauge/</loc>" in sm
+    assert "<loc>https://groundwatercast.com/rivers/</loc>" in sm
+    # home + rivers + about + methods + contact + explorer + browse + valley
+    # + wilgate-green + chalkbourne-gauge
+    assert stats["sitemap_urls"] == 10
     assert "<loc>https://groundwatercast.com/methods/</loc>" in sm
     assert "<loc>https://groundwatercast.com/about/</loc>" in sm
     assert "<loc>https://groundwatercast.com/contact/</loc>" in sm
@@ -138,6 +161,62 @@ def test_pack_slug_is_authoritative(tmp_path):
             og_manifest=tmp_path / "no-cards.json")
     assert (out / "wilgate-green-7b1f7f" / "index.html").exists()
     assert not (out / "wilgate-green").exists()
+
+
+FLOW_SAMPLE = {
+    "station": {"station_id": "aaaa-flow-1", "station_type": "flow",
+                "name": "Chilbolton Main", "slug": "chilbolton-main",
+                "river_name": "River Test", "winterbourne": False, "dry_months": [],
+                "lat": 51.145, "lon": -1.437},
+    "status": {"status": "below", "percentile": 8.2, "level": 1.234,
+               "obs_date": "2026-07-17", "obs_age_days": 2},
+    "observed": {"unit": "m3/s", "series": [["2019-01-01", 2.5], ["2026-07-17", 1.234]]},
+    "forecast": {"threshold": 0.851, "threshold_source": "q95_proxy",
+                 "p_below_q95_14d": 0.4123},
+}
+
+
+def test_flow_page_head_and_canonical():
+    html = B._flow_page(FLOW_SAMPLE, "chilbolton-main", "Hampshire", True)
+    assert f'<link rel="canonical" href="{B.SITE}/r/chilbolton-main/">' in html
+    assert f'<meta property="og:url" content="{B.SITE}/r/chilbolton-main/">' in html
+    assert ("<title>River Test at Chilbolton Main — river flow forecast, Hampshire | "
+            "GroundwaterCast</title>") in html
+    assert "not a drought warning" in html
+    assert "Gauged flow" in html and "Hands-off-Flow" in html
+
+
+def test_flow_jsonld_graph():
+    jl = _jsonld(B._flow_page(FLOW_SAMPLE, "chilbolton-main", "Hampshire", True))
+    types = {n["@type"] for n in jl["@graph"]}
+    assert {"WebSite", "WebPage", "Dataset", "Place"} <= types
+    ds = next(n for n in jl["@graph"] if n["@type"] == "Dataset")
+    assert ds["license"] == B.OGL
+    assert ds["variableMeasured"][0]["unitText"] == "m3/s"
+    assert "River flow time series — River Test at Chilbolton Main" in ds["name"]
+    assert "abstraction" in ds["description"]          # gauged-flow caveat travels
+    assert ds["temporalCoverage"] == "2019-01-01/2026-07-17"
+
+
+def test_flow_stat_bar_and_sentence():
+    html = B._flow_page(FLOW_SAMPLE, "chilbolton-main", "Hampshire", True)
+    assert "Latest flow" in html and "1.234 m³/s" in html
+    assert "Q95 proxy" in html and "0.851 m³/s" in html
+    assert "P(below Q95, 14 d)" in html and "41%" in html
+    assert "below normal flow for the time of year" in html
+    assert 'id="detail-body" data-station="aaaa-flow-1"' in html
+
+
+def test_flow_title_name_variants():
+    assert B._flow_title_name({"name": "Chilbolton", "river_name": "River Test"}) \
+        == "River Test at Chilbolton"
+    # river name embedded in the station name -> no silly "X at X"
+    assert B._flow_title_name({"name": "River Bain Tattershall",
+                               "river_name": "River Bain"}) == "River Bain Tattershall"
+    assert B._flow_title_name({"name": "Newbourne", "river_name": None}) == "Newbourne"
+    # pipe-separated candidates use the first
+    assert B._flow_title_name({"name": "Amesbury", "river_name": "Hampshire Avon|River Avon"}) \
+        == "Hampshire Avon at Amesbury"
 
 
 def test_breach_tile_matches_detail_js_pct():

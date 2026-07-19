@@ -14,9 +14,10 @@ window.GWC_CONTRACT = {
     "headline", "threshold", "threshold_source", "is_pinned",
     "has_forecast", "has_seasonal",
     "st_seq", "op_seq",
-    // RiverCast (Stage 7) — station_type is absent on every GW feature;
-    // river_name/rain_dependent are flow-only.
-    "station_type", "river_name", "rain_dependent",
+    // RiverCast — station_type is absent on every GW feature;
+    // river_name/rain_dependent/winterbourne are flow-only (winterbourne
+    // here = the seasonal dry_months-based read, stricter than the detail's).
+    "station_type", "river_name", "rain_dependent", "winterbourne",
   ],
 
   // stations/<id>.json — dotted paths (nested groups flattened for the test)

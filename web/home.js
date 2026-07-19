@@ -196,7 +196,8 @@
     if (!nFlow) { el.hidden = true; return; }
     if (mini) {
       mini.textContent = "Daily low-flow outlooks for " + nFlow.toLocaleString() +
-        " chalk streams & winterbournes — the first rivers to pass our forecast-skill gates.";
+        " gauges on England's chalk streams & winterbournes — every one past " +
+        "its own forecast-skill gate.";
     }
     el.hidden = false;
   }

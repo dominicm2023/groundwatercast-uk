@@ -342,17 +342,18 @@
     const unit = C.unitOf ? C.unitOf(detail) : "mAOD";
     const uLabel = C.unitLabel ? C.unitLabel(unit) : "mAOD";
     const fv = C.fmtOf ? C.fmtOf(unit) : fmt1;
-    // On a standalone /b/<slug>/ page the static shell already shows the name,
-    // sub-line and a status chip — skip our own to avoid duplication; the ☆
-    // watch control moves into the actions row (still inside #detail-body so
-    // watchlist.js can bind it). In the map side panel everything is shown.
-    // Rivers have no standalone page yet (v1 is explorer-only), so a flow
-    // gauge is never "on a borehole page".
-    const onBoreholePage = !isFlow && location.pathname.indexOf("/b/") === 0;
+    // On a standalone page (/b/<slug>/ for boreholes, /r/<slug>/ for flow
+    // gauges — the RiverCast expansion's stub pages) the static shell already
+    // shows the name, sub-line and a status chip — skip our own to avoid
+    // duplication; the ☆ watch control moves into the actions row (still
+    // inside #detail-body so watchlist.js can bind it). In the map side panel
+    // everything is shown. The name stays "onBoreholePage" — it's the
+    // am-I-on-my-own-stub-page discriminator for either station kind.
+    const onBoreholePage = location.pathname.indexOf(isFlow ? "/r/" : "/b/") === 0;
     if (!onBoreholePage) {
       out.push(`<div class="d-head"><h2 class="d-name">${esc(stn.name || stn.station_id)}</h2>${starBtn(stn, detail)}</div>`);
       out.push(isFlow
-        ? `<p class="d-sub">${esc(stn.river_name || "River gauge")} · RiverCast pilot</p>`
+        ? `<p class="d-sub">${esc(stn.river_name || "River gauge")} · RiverCast</p>`
         : `<p class="d-sub">${esc(stn.aquifer || "—")} · ${fmt1(stn.lat)}°N ${fmt1(stn.lon)}°E</p>`);
       if (isFlow && stn.winterbourne) {
         out.push(winterbourneChip(stn, st));
@@ -363,15 +364,15 @@
     // the official record is a direct client-side URL ("where's the real
     // data?"); Copy link makes the existing #bh deep-link shareable.
     if (stn.station_id) {
-      // "Open full page" links to the static per-borehole page (/b/<slug>/) — shown
-      // in the map side panel, hidden when we're already on that page or the
-      // station is a flow gauge (no /b/ equivalent exists for rivers yet).
+      // "Open full page" links to the station's static page (/b/<slug>/ for
+      // boreholes, /r/<slug>/ for flow gauges) — shown in the map side panel,
+      // hidden when we're already on that page.
       // Prefer the pack's canonical slug: for duplicate-named stations the stub
       // builder suffixes the slug, so re-deriving it from the name here would
       // link the suffixed twin to the WRONG station's page.
       const pageSlug = stn.slug || slug(stn.name || stn.station_id);
-      const fullPage = (onBoreholePage || isFlow) ? "" :
-        `<a class="d-act-btn d-act-primary" href="/b/${pageSlug}/">Open full page ↗</a>`;
+      const fullPage = onBoreholePage ? "" :
+        `<a class="d-act-btn d-act-primary" href="${isFlow ? "/r/" : "/b/"}${pageSlug}/">Open full page ↗</a>`;
       const pageStar = onBoreholePage ? starBtn(stn, detail) : "";
       out.push(`<div class="d-actions">` +
         pageStar +
@@ -992,11 +993,19 @@
   // Post-render: wire the history-range buttons + attach the fan hover.
   // Re-renders just the fan into .fan-host with a new observed-history window
   // (the forecast + seasonal always stay in view).
+  // On a standalone stub page? /b/ = borehole pages, /r/ = RiverCast gauge
+  // pages — both use the same full-width .bore-detail layout, so both get
+  // page-mode charts and the wired scrubber.
+  function onStubPage() {
+    return location.pathname.indexOf("/b/") === 0
+      || location.pathname.indexOf("/r/") === 0;
+  }
+
   // The page's big chart variant is only legible when it actually gets space:
   // squeezed to a phone width its 760-unit viewBox renders ~4px fonts. Below
   // 640px use the compact variant (designed for ~340px panels).
   function pageLarge() {
-    return location.pathname.indexOf("/b/") === 0
+    return onStubPage()
       && !(window.matchMedia && window.matchMedia("(max-width: 640px)").matches);
   }
 
@@ -1004,7 +1013,7 @@
     const C = window.GWC_CHARTS;
     const host = container.querySelector(".fan-host");
     if (!host) return;
-    const onPage = location.pathname.indexOf("/b/") === 0;
+    const onPage = onStubPage();
     const slider = container.querySelector(".fan-scrub");
     const readout = container.querySelector(".fan-readout");
     const initBtn = container.querySelector(".range-btn.active");

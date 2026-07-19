@@ -38,7 +38,8 @@ repo-versioned surfaces.)
 
 The pack publishes two kinds of station: groundwater boreholes (the original
 contract, unchanged) and flow gauges (**RiverCast** — additive throughout,
-no bump). A `station_type` property distinguishes them:
+no bump). A
+`station_type` property distinguishes them:
 
 - `station_type` is **absent** on every groundwater row/feature — "absent
   means gw". A GW row's property set is byte-identical to before RiverCast
@@ -67,7 +68,9 @@ and repeated in the explorer's trust card.
 | `stations.geojson` | FeatureCollection — one Feature per published station. The map index. |
 | `stations/<station_id>.json` | Per-station detail (status, normals, observed history, forecast, seasonal). |
 | `stations/index.json` | Lightweight catalogue: `station_id`, `slug`, `name`, `lat`, `lon`, `aquifer_designation`, `has_forecast`, `has_seasonal` per published station — the geojson identities without the heavy payload. |
-| `national_history.json` | One row per pack-build day: `date`, `below`/`near`/`above` counts (stations WITH a current status), `stations`, `with_forecast`. Append-only (capped 730 days). |
+| `national_history.json` | One row per pack-build day: `date`, `below`/`near`/`above` counts (stations WITH a current status), `stations`, `with_forecast`; since 2026-07-18 also the UKHO/NHMP 5-band counts `band_low`/`band_below`/`band_normal`/`band_above`/`band_high` (percentile cuts 13/28/72/87, same population). Append-only (capped 730 days). GW-only population — the flow analogue is `flow_national_history.json`. |
+| `flow_national_history.json` | RiverCast analogue of `national_history.json` (own file — the GW file's population is documented GW-only). One row per pack-build day over published flow gauges: `date`, `below`/`near`/`above` (vs each gauge's OWN flow climatology), `n_gauges`, `n_with_forecast`, `n_below_q95_now` (latest observation under the gauge's own Q95 proxy), plus the same 5-band counts. Append-only (capped 730 days). **Absent when the pack has no flow stations** — a GW-only pack is unchanged. |
+| `rivers.geojson` | **Optional** river-polyline context layer for the explorer's rivers view: one MultiLineString feature per gauged river (`properties.name`), OS Open Rivers (OGL v3) simplified for display (~40 m Douglas–Peucker, 5 dp coords — viz-grade, not survey data). Built by `scripts/build_river_polylines.py`, copied verbatim (same lazy, never-required pattern as `geology.geojson`); provenance under `meta.inputs.river_polylines`. |
 
 **Which stations are published**: catalogued groundwater stations that have
 observation data (a per-station shard) or a forecast, minus the curated
@@ -162,7 +165,12 @@ minus `aquifer`/`aquifer_designation`, not applicable), `status`, `percentile`, 
 `level`, `obs_date`, `obs_age_days`, `sgi` (`GEOJSON_STATUS_PROPS`, computed the same
 way against the gauge's own monthly flow climatology), `freshness`, `days_since`,
 `data_source` (`GEOJSON_FRESHNESS_PROPS`), `has_forecast` (always `true` in v1 — see
-§2.1), `river_name`, `rain_dependent`. No `tier`/`p_breach_14d`/`threshold`/`st_seq`/
+§2.1), `river_name`, `rain_dependent`, and (additive 2026-07-19) `winterbourne`
+(bool — the gauge's record shows a RECURRING seasonal dry period, i.e. the
+detail's `station.dry_months` is non-empty; deliberately stricter than the
+detail's literal any-zero-day `station.winterbourne` flag, so a one-off zero
+reading never puts a river in the landing's winterbourne story). No
+`tier`/`p_breach_14d`/`threshold`/`st_seq`/
 `op_seq`/aquifer fields, no seasonal/trend-flag flags — those are GW-specific
 vocabulary or not yet published for rivers (seasonal is Stage 6b shadow-only).
 
@@ -339,4 +347,6 @@ Status-only station detail (abridged):
 | `1.0` | 2026-06-20 | Additive (no bump): `st_seq` / `op_seq` geojson props + `meta.forecast_frames` / `meta.forecast_frame_days` — forecast-timeline scrubber (recolour the map through Today → +2 wk → Months 1–6; slider spaced by real elapsed time) |
 | `1.0` | 2026-07-01 | Additive (no bump): `slug` on geojson props + `detail.station` — the canonical `/b/<slug>/` page path, assigned once at pack build so duplicate-named stations can never link to the wrong page |
 | `1.0` | 2026-07-04 | Additive (no bump): `stations/index.json` (lightweight catalogue) + `national_history.json` (daily national below/near/above counts). `meta.forecast_frame_days` seasonal offsets now use the run's REAL `month_start` mid-points (was a 30·mi approximation that placed "Month 1" ~a month earlier than its valid period) — a semantic accuracy fix within the documented "approximate spacing" contract. |
+| `1.0` | 2026-07-18 | Additive (no bump): `national_history.json` rows gain the UKHO/NHMP 5-band counts (`band_low`/`band_below`/`band_normal`/`band_above`/`band_high`, percentile cuts 13/28/72/87 over the same status-carrying GW population) — accruing history ahead of a possible 5-band status display; existing consumers ignore the new keys. |
+| `1.0` | 2026-07-19 | Additive (no bump), RiverCast tier-1 expansion (50 → 94 gauges): new `flow_national_history.json` (RiverCast daily national counts — below/near/above vs each gauge's own flow climatology, `n_gauges`, `n_with_forecast`, `n_below_q95_now`, 5-band counts; accruing from the expansion's first pack build, ahead of the `/rivers/` landing sparkline; absent when the pack has zero flow stations, so a GW-only pack is byte-identical). Flow geojson features gain `winterbourne` (bool — the SEASONAL read, `station.dry_months` non-empty; deliberately stricter than the detail's any-zero-day `station.winterbourne`, see §5.3). New optional `rivers.geojson` river-polyline layer (OS Open Rivers, OGL, simplified; `meta.inputs.river_polylines` provenance) for the explorer's rivers view. |
 | `1.0` | 2026-07-14 | Additive (no bump): **RiverCast** — flow gauges as a second station kind (§2.1, §5.4a). `station_type: "flow"` on `stations.geojson` features and `stations/index.json` rows (absent on every GW row); flow features carry `river_name`/`rain_dependent` in place of the GW forecast-tier props; flow detail JSON gains `station.river_name`/`linked_boreholes`/`winterbourne`/`dry_months` and a flow-shaped `forecast` block (`observed.unit: "m3/s"`, `p_below_q95`/`p_below_q95_14d`, `threshold_source: "q95_proxy"`, `rain_dependent`, no `roll_p50`/`model_spread` in `fan`). `meta.counts` gains `flow_gauges`/`flow_with_forecast`; `meta.river_disclaimer` added. v1 publishes only the gated southern-chalk pilot (~50 gauges); with no flow inputs present the pack builds unchanged (zero flow stations). |

@@ -101,6 +101,7 @@ class PackInputs:
     region_name: str = ""
     source_meta: dict = field(default_factory=dict)
     geology_path: Path | None = None         # optional aquifer GeoJSON to ship
+    rivers_path: Path | None = None          # optional river polylines (OS Open Rivers)
     # RiverCast (Stage 7) — all optional; absent/empty ⇒ zero flow stations,
     # the pack builds exactly as it does today (see docs/artifact_contract.md §6).
     flow_catalogue: pd.DataFrame | None = None
@@ -205,6 +206,21 @@ def load_inputs(cfg: dict, root: Path) -> PackInputs:
     if not flow_shard_dir.exists() or not any(flow_shard_dir.glob("*.parquet")):
         flow_shard_dir = None
 
+    # Optional river-polyline context layer (rivers view in the explorer) —
+    # OS Open Rivers (OGL), extracted + simplified per published gauge by
+    # scripts/build_river_polylines.py. Same copied-verbatim, lazy-loaded,
+    # never-required pattern as geology above.
+    rivers = root / "data/processed/river_polylines.geojson"
+    if rivers.exists():
+        rmtime = datetime.fromtimestamp(rivers.stat().st_mtime, tz=timezone.utc)
+        meta["river_polylines"] = {"path": rivers.relative_to(root).as_posix(),
+                                   "mtime_utc": rmtime.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                   "status": "ok"}
+    else:
+        rivers = None
+        meta["river_polylines"] = {"path": "data/processed/river_polylines.geojson",
+                                   "mtime_utc": None, "status": "missing"}
+
     return PackInputs(
         catalogue=catalogue, shard_dir=shard_dir, freshness=freshness,
         normals=normals, pastas_summary=summary, pastas_fan=fan,
@@ -214,7 +230,7 @@ def load_inputs(cfg: dict, root: Path) -> PackInputs:
         pinned_ids=frozenset(user_threshold_station_ids()),
         live_capable=len(live_capable_ids()),
         region_name=cfg.get("region", {}).get("name", ""),
-        source_meta=meta, geology_path=geology,
+        source_meta=meta, geology_path=geology, rivers_path=rivers,
         flow_catalogue=flow_catalogue, flow_shard_dir=flow_shard_dir,
         flow_summary=flow_summary, flow_fan=flow_fan, flow_gate=flow_gate,
         station_links=station_links)
@@ -414,6 +430,39 @@ def _linked_boreholes_map(links: pd.DataFrame | None) -> dict[str, list[str]]:
 # Block builders (pure)
 # ---------------------------------------------------------------------------
 
+# National-history helpers, shared by the GW and flow accrual blocks below —
+# the UKHO/NHMP band edges and the append-only store semantics must never
+# diverge between the two files.
+
+def _band_counts(pcts: list[float]) -> dict:
+    """UKHO/NHMP 5-band counts (percentile cuts 13/28/72/87)."""
+    return {
+        "band_low": sum(1 for p in pcts if p < 13),
+        "band_below": sum(1 for p in pcts if 13 <= p < 28),
+        "band_normal": sum(1 for p in pcts if 28 <= p <= 72),
+        "band_above": sum(1 for p in pcts if 72 < p <= 87),
+        "band_high": sum(1 for p in pcts if p > 87),
+    }
+
+
+def _accrue_history(store_path: Path, row: dict, cap: int = 730) -> list:
+    """Append ``row`` to the append-only national-history store at
+    ``store_path`` (replace any same-date row; keep the newest ``cap``),
+    write it back, and return the updated list for shipping in the pack.
+    A corrupt store degrades to a fresh list rather than crashing a build."""
+    hist: list = []
+    if store_path.exists():
+        try:
+            hist = json.loads(store_path.read_text(encoding="utf-8"))
+        except Exception:
+            hist = []
+    hist = [r for r in hist if r.get("date") != row["date"]] + [row]
+    hist = hist[-cap:]
+    store_path.write_text(json.dumps(hist, separators=(",", ":")),
+                          encoding="utf-8")
+    return hist
+
+
 def _status_block(st: dict) -> dict:
     return {
         "status": st["status"],
@@ -570,11 +619,17 @@ def _flow_forecast_block(srow: pd.Series, fan: pd.DataFrame | None,
 
 
 def flow_station_feature(cat_row: pd.Series, status: dict, fresh: dict,
-                         rain_dependent: bool, slug: str) -> dict:
+                         rain_dependent: bool, slug: str,
+                         seasonal_winterbourne: bool = False) -> dict:
     """One GeoJSON Feature for a RiverCast gauge — a deliberately SMALLER,
     distinct property set from a GW feature (docs/artifact_contract.md §5.3):
     no aquifer/tier/threshold/timeline props (GW-specific vocabulary), and
-    ``station_type: "flow"`` is the only key a GW feature never carries."""
+    ``station_type: "flow"`` is the only key a GW feature never carries.
+    ``seasonal_winterbourne`` (published as ``winterbourne``, additive
+    2026-07-19) is the SEASONAL read — dry_months non-empty — NOT the
+    detail's literal any-zero-day ``station.winterbourne`` flag; the
+    parameter name is deliberately different so the two booleans can't be
+    swapped silently at a call site."""
     props = {
         "station_id": str(cat_row["station_id"]),
         "slug": slug,
@@ -587,6 +642,7 @@ def flow_station_feature(cat_row: pd.Series, status: dict, fresh: dict,
         "has_forecast": True,          # v1: only gated, fan-carrying gauges publish
         "river_name": _str_or_none(cat_row.get("river_name")),
         "rain_dependent": jbool(rain_dependent),
+        "winterbourne": jbool(seasonal_winterbourne),
     }
     return {
         "type": "Feature",
@@ -820,8 +876,14 @@ def _cat_of(level, qrow) -> str | None:
 
 
 def _fan_frame(fan: pd.DataFrame, lead: int, month_norms: dict) -> tuple[str, float]:
-    """Category (of P50) + confidence (P10/P50/P90 agreement) at a fan lead."""
-    pos = int((fan["lead"] - lead).abs().to_numpy().argmin())
+    """Category (of P50) + confidence (P10/P50/P90 agreement) at a fan lead.
+
+    Distance ties break toward the LOWER lead: the fan has no lead-0 row
+    (forecast leads 1.., nowcast leads ..-1), so the frame-0 "Today" lookup
+    must resolve to the nowcast -1 row, not the forecast +1 (tomorrow) row
+    that happens to be appended first."""
+    leads = fan["lead"].to_numpy()
+    pos = int(np.lexsort((leads, np.abs(leads - lead)))[0])
     f = fan.iloc[pos]
     try:
         month = pd.Timestamp(f["date"]).month
@@ -1148,6 +1210,12 @@ def build_pack(inputs: PackInputs, out_dir: Path, *,
     # -----------------------------------------------------------------------
     n_gw_features = len(features)
     n_flow, n_flow_forecast = 0, 0
+    # Per-gauge snapshot rows for flow_national_history.json (accrued below,
+    # after the GW national-history block): status/percentile vs the gauge's
+    # OWN flow climatology + a below-its-own-Q95-right-now flag. Collected
+    # here rather than re-derived from `features` because Q95 (the summary's
+    # q95_m3s) is not a feature property.
+    flow_hist_rows: list[dict] = []
     flow_summary_latest = _latest_run_only(inputs.flow_summary)
     if (flow_summary_latest is not None and not flow_summary_latest.empty
             and inputs.flow_catalogue is not None
@@ -1189,8 +1257,30 @@ def build_pack(inputs: PackInputs, out_dir: Path, *,
             n_flow += 1
             n_flow_forecast += 1               # every published flow station carries a fan (v1)
 
+            q95 = srow.get("q95_m3s")
+            level_now = st.get("level")
+            flow_hist_rows.append({
+                "status": st.get("status"),
+                "percentile": st.get("percentile"),
+                # "below Q95 RIGHT NOW" requires a CURRENT reading — the same
+                # population rule as below/near/above (status is None when the
+                # latest observation is too old to place). Without the status
+                # gate, a gauge whose feed died during a dry spell would count
+                # as "below Q95 now" forever off its months-old last reading.
+                "below_q95_now": (st.get("status") is not None
+                                  and level_now is not None and q95 is not None
+                                  and pd.notna(level_now) and pd.notna(q95)
+                                  and float(level_now) < float(q95)),
+            })
+
+            # The FEATURE flag is the stricter seasonal read (a recurring dry
+            # season, i.e. dry_months non-empty), not the detail's literal
+            # any-zero-day trigger — a single zero-flow reading (datum or
+            # diversion artifact) must not put a river in the winterbourne
+            # story on the landing/map.
             features.append(flow_station_feature(cat_row, status, fresh,
-                                                  rain_dep, slug))
+                                                  rain_dep, slug,
+                                                  bool(dry_months)))
 
             tail = series
             if not series.empty:
@@ -1237,6 +1327,11 @@ def build_pack(inputs: PackInputs, out_dir: Path, *,
     # Optional aquifer geology, copied verbatim (the explorer lazy-loads it).
     if inputs.geology_path is not None and inputs.geology_path.exists():
         shutil.copyfile(inputs.geology_path, building / "geology.geojson")
+
+    # Optional river polylines (rivers view), copied verbatim — same lazy
+    # pattern as geology.
+    if inputs.rivers_path is not None and inputs.rivers_path.exists():
+        shutil.copyfile(inputs.rivers_path, building / "rivers.geojson")
 
     forecast_run = None
     if summary is not None and not summary.empty:
@@ -1300,18 +1395,47 @@ def build_pack(inputs: PackInputs, out_dir: Path, *,
         "stations": n_gw_features,
         "with_forecast": n_forecast,
     }
-    hist_store = out_dir.parent / "national_history.json"
-    nat_hist: list = []
-    if hist_store.exists():
-        try:
-            nat_hist = json.loads(hist_store.read_text(encoding="utf-8"))
-        except Exception:
-            nat_hist = []
-    nat_hist = [r for r in nat_hist if r.get("date") != nat_row["date"]] + [nat_row]
-    nat_hist = nat_hist[-730:]                      # two years is plenty
-    hist_store.write_text(json.dumps(nat_hist, separators=(",", ":")),
-                          encoding="utf-8")
+    # UKHO/NHMP 5-band counts (percentile cuts 13/28/72/87) — additive keys
+    # accruing since 2026-07-18 so a future 5-band display has history from
+    # day one (this store cannot be backfilled: the per-borehole percentiles
+    # are overwritten each build). Same population as below/near/above — GW
+    # features carrying a current status AND a percentile. Consumers ignore
+    # unknown keys (renderTrend reads below/near/above only).
+    pcts = [float(f["properties"]["percentile"]) for f in gw_features
+            if f["properties"].get("status")
+            and f["properties"].get("percentile") is not None]
+    nat_row.update(_band_counts(pcts))
+    nat_hist = _accrue_history(out_dir.parent / "national_history.json", nat_row)
     _dump(nat_hist, building / "national_history.json", pretty=pretty)
+
+    # Flow national status history (flow_national_history.json) — the
+    # RiverCast analogue of the block above, in its OWN file because the GW
+    # file's below/near/above population is long-documented as GW-only (see
+    # that block's comment). One row per pack-build day over the published
+    # flow gauges: below/near/above vs each gauge's OWN flow climatology,
+    # the UKHO-style 5-band counts (the 2026-07-18 lesson: accrue bands from
+    # day one — this store cannot be backfilled), and `n_below_q95_now`
+    # (gauges whose latest observation is under their own Q95 proxy).
+    # Additive contract file (2026-07-19). Skipped entirely when the pack has
+    # no flow stations — a GW-only host accrues no misleading all-zero rows,
+    # and its pack contents stay byte-identical to before RiverCast.
+    if flow_hist_rows:
+        flow_nat_row = {
+            "date": iso_date(now_ts),
+            "below": sum(1 for r in flow_hist_rows if r["status"] == "below"),
+            "near": sum(1 for r in flow_hist_rows if r["status"] == "near"),
+            "above": sum(1 for r in flow_hist_rows if r["status"] == "above"),
+            "n_gauges": n_flow,
+            "n_with_forecast": n_flow_forecast,
+            "n_below_q95_now": sum(1 for r in flow_hist_rows if r["below_q95_now"]),
+        }
+        fpcts = [float(r["percentile"]) for r in flow_hist_rows
+                 if r["status"] and r["percentile"] is not None
+                 and pd.notna(r["percentile"])]
+        flow_nat_row.update(_band_counts(fpcts))
+        flow_nat_hist = _accrue_history(
+            out_dir.parent / "flow_national_history.json", flow_nat_row)
+        _dump(flow_nat_hist, building / "flow_national_history.json", pretty=pretty)
 
     _dump(build_manifest(building), building / "manifest.json", pretty=pretty)
 

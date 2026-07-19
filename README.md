@@ -37,8 +37,8 @@ per monitored borehole, across three horizons in a single vocabulary —
   Rebuilt monthly.
 
 > **Status: early.** The engine + explorer span **~1,378 monitored boreholes
-> across England, 687 of which carry the full forecast**, plus a **50-gauge
-> river low-flow pilot**. Forecast uncertainty is **indicative — uncalibrated**
+> across England, 687 of which carry the full forecast**, plus **94 river
+> gauges with daily low-flow outlooks**. Forecast uncertainty is **indicative — uncalibrated**
 > until a full archived winter has been verified; the seasonal outlook is
 > **experimental**.
 >
@@ -129,16 +129,18 @@ thresholds:
 Boreholes without one fall back to their own P90 level, clearly badged as a
 proxy.
 
-## RiverCast — low-flow river forecasts (pilot)
+## RiverCast — low-flow river forecasts
 
 The same machinery, pointed at rivers: daily 14-day low-flow outlooks for
-**50 chalk streams and winterbournes** — the gauges that passed a per-gauge
-forecast-skill gate (a leakage-safe hindcast against a naive-recession
-baseline; **97 of 1,087 EA flow gauges** qualified tier-1, the pilot publishes
-the strongest chalk set). Each gauge gets a **two-pathway Pastas model on
-log-flow** — a slow baseflow path (the aquifer draining, the physics shared
-with the boreholes) plus a quickflow path — driven by the same 51-member ENS
-rainfall.
+**94 river gauges** — England's chalk streams and winterbournes, every gauge
+that passed its own forecast-skill gate (a leakage-safe hindcast against a
+naive-recession baseline; **97 of 1,087 EA flow gauges** qualified tier-1,
+minus a small curated set of operationally-controlled artificial channels —
+reasons recorded in `scripts/select_flow_pilot.py`). Each gauge gets a
+**two-pathway Pastas model on log-flow** — a slow baseflow path (the aquifer
+draining, the physics shared with the boreholes) plus a quickflow path —
+driven by the same 51-member ENS rainfall. The rivers have their own front
+page at [groundwatercast.com/rivers](https://groundwatercast.com/rivers/).
 
 Honesty caveats, carried on every river page: gauged flow **includes
 abstraction and discharge effects**; rating curves are least accurate exactly
@@ -181,10 +183,10 @@ audit, small testable modules.
   open-data pipeline
 - ✅ **Public static explorer** — live at
   [groundwatercast.com](https://groundwatercast.com), consuming the daily pack
-- ✅ **RiverCast pilot** — 50 chalk-stream gauges with daily low-flow outlooks
+- ✅ **RiverCast** — full tier-1 fleet: 94 river gauges with daily low-flow
+  outlooks, a `/rivers/` front page, an explorer rivers view with OS Open
+  Rivers geometry, and a page per gauge
 - 📋 **Verification + fan calibration** after the first archived winter
-- 📋 **RiverCast expansion** — the remaining gate-passing gauges (97 tier-1
-  scored fleet-wide)
 - 📋 **Scotland adapter** (SEPA's separate time-series API)
 
 ## Citation & licence

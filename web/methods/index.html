@@ -22,7 +22,7 @@
 <body>
   <header class="bore-top">
     <a class="bore-brand" href="/"><img class="bore-logo" src="/favicon.svg" width="24" height="24" alt=""> GroundwaterCast&nbsp;UK</a>
-    <nav><a href="/explorer/">Explorer</a> <a href="/browse/">Browse</a> <a href="/about/">About</a> <a href="/methods/" aria-current="page">Methods</a></nav>
+    <nav><a href="/explorer/">Explorer</a> <a href="/rivers/">Rivers</a> <a href="/browse/">Browse</a> <a href="/about/">About</a> <a href="/methods/" aria-current="page">Methods</a></nav>
   </header>
 
   <div class="bore-wrap about-wrap">
@@ -113,14 +113,20 @@
     </section>
 
     <section class="about-sec">
-      <h2>RiverCast — daily low-flow outlooks (pilot)</h2>
+      <h2>RiverCast — daily low-flow outlooks</h2>
       <p><b>What it is.</b> A second station kind alongside groundwater
         boreholes: EA river-flow gauges, published with the same
         below/near/above vocabulary against each gauge's own flow
-        climatology, plus a 14-day probabilistic low-flow fan. v1 publishes
-        only a pilot tranche of southern chalk streams and winterbournes
-        (~50 gauges) — the ones that have passed their own admission gate;
-        the fleet-wide status-only layer is future work.</p>
+        climatology, plus a 14-day probabilistic low-flow fan. We publish
+        the full <b>tier-1</b> fleet — every open gauge in England whose own
+        admission-gate hindcast stays skilful even with a worthless rain
+        forecast (94 of 1,087 scanned, mostly chalk streams and
+        winterbournes), minus a small curated set of operationally-controlled
+        artificial channels (flood-relief diversions, sluice-operated drains)
+        whose gauged "flow" records structure operation rather than
+        hydrology. Rain-dependent and gate-failing gauges stay unpublished;
+        the fleet-wide status-only layer is future work.
+        The rivers have <a href="/rivers/">their own front page</a>.</p>
       <p><b>The model.</b> One Pastas transfer-function-noise model per gauge,
         fit on <b>log-flow</b>: a two-pathway structure with a slow FlexModel
         recharge stress (the same nonlinear recharge engine the borehole

@@ -229,3 +229,20 @@ a.card:hover {
 }
 
 .stat-pill .stat-spark { display: inline-flex; align-items: center; margin-left: 6px; }
+
+/* ---- /rivers/ landing extras (shares everything above) ---- */
+.stat-sub { font-size: 0.88rem; color: var(--muted); margin: 2px 0 0; }
+.stat-sub b { color: var(--below); }
+.wb-strip { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
+.wb-pill {
+  display: inline-flex; align-items: baseline; gap: 8px;
+  background: #fff; border: 1px solid var(--line); border-radius: 999px;
+  padding: 6px 14px; font-size: 0.86rem; color: var(--text);
+  transition: box-shadow .15s, border-color .15s;
+}
+.wb-pill:hover { border-color: #b8c6d4; box-shadow: 0 2px 8px rgba(26, 58, 92, 0.1); text-decoration: none; }
+.wb-pill .wb-name { font-weight: 650; color: var(--ink); }
+.wb-pill .wb-state { font-size: 0.78rem; color: var(--muted); }
+.wb-pill.dry .wb-state { color: #a06000; font-weight: 600; }
+.wb-pill.flowing .wb-state { color: #1f77b4; }
+.section .mini { color: var(--muted); font-size: 0.88rem; max-width: 62ch; }

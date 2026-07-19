@@ -598,6 +598,26 @@ def test_status_timeline_estimates_today_when_obs_stale():
     assert 0.18 < op[0] < 0.92                             # faint: between no-data and observed
 
 
+def test_fan_frame_lead0_tie_prefers_nowcast_row():
+    # Real fans have no lead-0 row: forecast rows (leads 1..) are appended first,
+    # nowcast rows (leads ..-1) after. The frame-0 lookup ties on |lead| between
+    # +1 and -1 and must resolve to the NOWCAST -1 row (today), not the forecast
+    # +1 row (tomorrow) that argmin's first-occurrence order used to pick.
+    from src.publish.pack import _fan_frame
+    fan = pd.DataFrame({
+        "lead": [1, 2, -2, -1],                            # forecast first, nowcast after
+        "date": ["2026-06-21"] * 4,
+        "gw_p10": [25.0, 25.0, 10.0, 10.0],                # forecast=above, nowcast=below
+        "gw_p50": [25.0, 25.0, 10.0, 10.0],
+        "gw_p90": [25.0, 25.0, 10.0, 10.0],
+    })
+    qrow = pd.Series({"t1": 20.0, "t2": 24.0})             # <20 below, >24 above
+    cat, _conf = _fan_frame(fan, 0, qrow.pipe(lambda q: {6: q}))
+    assert cat == "below"                                  # the nowcast -1 row won the tie
+    # exact-match leads are unaffected by the tie-break
+    assert _fan_frame(fan, 2, {6: qrow})[0] == "above"
+
+
 def test_contract_doc_in_sync():
     doc = Path(__file__).parents[1] / "docs" / "artifact_contract.md"
     assert doc.exists(), "docs/artifact_contract.md missing"
@@ -677,6 +697,11 @@ def test_national_history_appends_and_dedupes(inputs, tmp_path):
     _build(inputs, tmp_path)
     hist2 = json.loads((out / "national_history.json").read_text(encoding="utf-8"))
     assert len(hist2) == 1
+    # UKHO 5-band counts (additive 2026-07-18): partition the SAME population
+    # as below/near/above — status-carrying stations with a percentile.
+    bands = ["band_low", "band_below", "band_normal", "band_above", "band_high"]
+    assert all(b in row for b in bands)
+    assert sum(row[b] for b in bands) <= row["below"] + row["near"] + row["above"]
 
 
 def test_frame_days_use_real_seasonal_month_starts(inputs, tmp_path):
@@ -743,6 +768,7 @@ def test_flow_gauge_publishes_feature_and_detail(flow_inputs, tmp_path):
     assert flow_props["river_name"] == "Test Brook"
     assert flow_props["rain_dependent"] is False
     assert flow_props["has_forecast"] is True
+    assert flow_props["winterbourne"] is True     # additive 2026-07-19: lifted from detail
     assert flow_props["status"] in ("below", "near", "above", None)
     # GW features are BYTE-shape unchanged: still no station_type key at all
     assert "station_type" not in by_id["A"]["properties"]
@@ -820,6 +846,36 @@ def test_national_history_excludes_flow(flow_inputs, tmp_path):
     hist = json.loads((out / "national_history.json").read_text(encoding="utf-8"))
     row = hist[-1]
     assert row["stations"] == 2                            # F1 not counted
+
+
+def test_flow_national_history_accrues_and_dedupes(flow_inputs, tmp_path):
+    """flow_national_history.json (additive 2026-07-19): one row per build
+    day over the published flow gauges — below/near/above vs each gauge's own
+    climatology, Q95-now count, 5-band counts. Same dedupe-on-rebuild and
+    survives-the-swap semantics as the GW file."""
+    out, _ = _build(flow_inputs, tmp_path)
+    hist = json.loads((out / "flow_national_history.json").read_text(encoding="utf-8"))
+    assert len(hist) == 1
+    row = hist[0]
+    assert row["date"] == FIXED_NOW[:10]
+    assert row["n_gauges"] == 1 and row["n_with_forecast"] == 1
+    assert row["below"] + row["near"] + row["above"] <= row["n_gauges"]
+    # fixture: latest observed ~0.19 m3/s, q95 fixture value 0.05 -> not below
+    assert row["n_below_q95_now"] == 0
+    bands = ["band_low", "band_below", "band_normal", "band_above", "band_high"]
+    assert all(b in row for b in bands)
+    assert sum(row[b] for b in bands) <= row["n_gauges"]
+    # rebuild same day: replaced, not duplicated
+    _build(flow_inputs, tmp_path)
+    hist2 = json.loads((out / "flow_national_history.json").read_text(encoding="utf-8"))
+    assert len(hist2) == 1
+
+
+def test_flow_national_history_absent_without_flow(inputs, tmp_path):
+    """A GW-only pack must NOT ship the flow history file at all (no
+    misleading all-zero accrual; pack contents unchanged pre-RiverCast)."""
+    out, _ = _build(inputs, tmp_path)
+    assert not (out / "flow_national_history.json").exists()
 
 
 def test_frame_days_ignore_stale_origin_cohort():

@@ -130,9 +130,12 @@ GEOJSON_TYPE_PROPS = ("station_type",)
 # stations.geojson flow-feature properties. Deliberately NOT a superset of
 # GEOJSON_FORECAST_PROPS (tier/p_breach_14d/threshold etc. are GW-specific
 # vocabulary that doesn't apply to a below-Q95 low-flow read) — a flow feature
-# carries its own small, honest set. river_name/rain_dependent are read on the
-# map; the fuller forecast numbers live in the detail JSON (fetched on click).
-GEOJSON_FLOW_PROPS = ("river_name", "rain_dependent")
+# carries its own small, honest set. river_name/rain_dependent/winterbourne
+# are read on the map + /rivers/ landing; the fuller forecast numbers live in
+# the detail JSON (fetched on click). NOTE the feature-level ``winterbourne``
+# is the SEASONAL read (dry_months non-empty) — deliberately stricter than
+# the detail's literal any-zero-day station.winterbourne flag (docs §5.3).
+GEOJSON_FLOW_PROPS = ("river_name", "rain_dependent", "winterbourne")
 
 # stations/<id>.json — flow-only additions to the ``station`` block (alongside
 # the shared station_id/slug/name/lat/lon). A flow station has no aquifer;

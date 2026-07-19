@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RiverCast — daily river low-flow forecasts for England's chalk streams | GroundwaterCast UK</title>
+  <meta name="description" content="Daily low-flow forecasts for England's chalk streams and winterbournes, gauge by gauge — current flow vs normal, a 14-day fan, and the probability of falling below the Q95 low-flow threshold. Built on open data. Indicative — not a warning." />
+  <link rel="canonical" href="https://groundwatercast.com/rivers/" />
+  <meta name="theme-color" content="#1a3a5c" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="GroundwaterCast UK" />
+  <meta property="og:locale" content="en_GB" />
+  <meta property="og:title" content="RiverCast — daily river low-flow forecasts for England's chalk streams" />
+  <meta property="og:description" content="Daily low-flow forecasts for England's chalk streams and winterbournes — flow vs normal, a 14-day fan, and the chance of dropping below the Q95 low-flow threshold. Open data, verified daily." />
+  <meta property="og:url" content="https://groundwatercast.com/rivers/" />
+  <meta property="og:image" content="https://groundwatercast.com/og/default.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="RiverCast — daily river low-flow forecasts for England's chalk streams" />
+  <meta name="twitter:description" content="Daily low-flow forecasts for England's chalk streams and winterbournes. Indicative, not a warning." />
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@graph":[
+    {"@type":"WebPage","@id":"https://groundwatercast.com/rivers/#webpage","url":"https://groundwatercast.com/rivers/","name":"RiverCast — daily river low-flow forecasts for England's chalk streams","isPartOf":{"@id":"https://groundwatercast.com/#website"},"inLanguage":"en-GB","description":"Daily per-gauge low-flow forecasts for England's chalk streams and winterbournes, built on open data."}
+  ]}
+  </script>
+  <link rel="stylesheet" href="/vendor/maplibre-gl.css" />
+  <link rel="stylesheet" href="/home.css" />
+</head>
+<body>
+  <header class="site-top">
+    <a class="site-brand" href="/">
+      <img class="logo" src="/favicon.svg" width="34" height="34" alt="" />
+      <div>
+        <h1>GroundwaterCast&nbsp;UK</h1>
+        <p class="tagline">per-borehole groundwater forecasts · open data</p>
+      </div>
+    </a>
+    <nav class="site-nav">
+      <a href="/rivers/" aria-current="page">Rivers</a>
+      <a href="/browse/">Browse</a>
+      <a href="/about/">About</a>
+      <a class="nav-methods" href="/methods/">Methods</a>
+      <a class="primary" href="/explorer/#rivers=1">Explore<span class="cta-long"> the map</span> →</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="wrap hero">
+      <div class="hero-copy">
+        <h2>England's chalk streams,<br />gauge&nbsp;by&nbsp;gauge.</h2>
+        <p class="lede" id="rivers-lede">
+          Daily low-flow forecasts for England's chalk streams and
+          winterbournes — the rivers that groundwater feeds.
+        </p>
+        <div class="stat-pill" id="rivers-stat" hidden>
+          <span class="dot" style="background:var(--below)"></span>
+          <span class="num" id="rstat-num">—</span>
+          <span id="rstat-text">gauges below normal flow for the season</span>
+        </div>
+        <p class="stat-sub" id="q95-line" hidden></p>
+        <p class="sub">
+          Current flow vs the gauge's own normal → a 14-day probabilistic fan →
+          the chance of falling below its Q95 low-flow threshold. Every gauge
+          passed its own forecast-skill gate before publishing.
+        </p>
+        <div class="cta-row">
+          <a class="cta" href="/explorer/#rivers=1">Explore the rivers map →</a>
+          <a class="cta ghost" href="/">Groundwater home</a>
+        </div>
+      </div>
+      <div class="hero-map" id="hero-map" aria-label="Snapshot map of monitored river flow gauges in England, coloured by current status">
+        <div id="hero-map-gl"></div>
+        <a class="map-cover" href="/explorer/#rivers=1" aria-label="Open the interactive rivers map"></a>
+        <span class="maplab" id="hero-map-lab">Live snapshot — click to open the interactive map.</span>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <p class="eyebrow">Worth a look today</p>
+      <h3>Notable gauges right now</h3>
+      <p class="intro">Rivers standing out against their own seasonal normal —
+        each links to its own page with the full forecast.</p>
+      <div class="cards three" id="notable-gauges">
+        <span class="loading">Loading current readings…</span>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="wrap section">
+        <p class="eyebrow">Winterbournes</p>
+        <h3>When will the bourne flow?</h3>
+        <p class="intro" id="wb-intro">Winterbournes are chalk streams that dry
+          by design — flowing only when the aquifer beneath them is high enough.
+          Their beds are dry for part of most years, and the question locals
+          actually ask is not "how high is it?" but "when will it start —
+          or stop?"</p>
+        <div class="wb-strip" id="wb-strip" hidden></div>
+        <p class="mini" id="wb-note">Each winterbourne's page shows whether it's
+          flowing today, the months it typically runs dry, and the 14-day
+          outlook for the groundwater-fed flow that decides it.</p>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <p class="eyebrow">For abstraction &amp; licensing work</p>
+      <h3>Q95, Hands-off Flow, and your own trigger levels</h3>
+      <div class="cards three">
+        <div class="card">
+          <div class="nm">Q95 as the reference</div>
+          <div class="mini">Each gauge's headline probability is
+            <b>P(flow&nbsp;&lt;&nbsp;Q95 within 14 days)</b> — Q95 computed from
+            that gauge's own full record. It is a <b>climatological proxy</b>,
+            not the Hands-off-Flow condition on any abstraction licence.</div>
+        </div>
+        <div class="card">
+          <div class="nm">Gauged, not naturalised</div>
+          <div class="mini">We forecast the flow <b>as measured at the gauge</b>,
+            including any abstraction and discharge effects upstream. Rating
+            curves — the stage-to-flow conversion — are least accurate exactly
+            where low-flow work cares most.</div>
+        </div>
+        <div class="card">
+          <div class="nm">Your own trigger level</div>
+          <div class="mini">Licence holders watch conditions written in their
+            own licence, not Q95. We're piloting custom trigger levels —
+            your HoF value on your gauge's forecast.
+            <a href="/contact/">Get in touch →</a></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <p class="eyebrow">Why rivers, here</p>
+      <h3>Summer baseflow <em>is</em> groundwater</h3>
+      <p class="intro">In a chalk stream, the water in July fell as rain months
+        ago and has been draining through the aquifer since. That slow physics is
+        why a 14-day flow forecast can work at all — and it's the same physics
+        behind our borehole forecasts. Every river page links the boreholes that
+        feed it; every linked borehole carries its own seasonal outlook.
+        <a href="/methods/">Methods &amp; limitations →</a></p>
+    </section>
+
+    <footer class="wrap site-foot">
+      <p class="disclaimer"><b>Indicative, experimental research forecast.</b>
+        Not a flood or drought warning; not for safety-critical or operational
+        abstraction decisions. RiverCast forecasts <b>gauged flow</b> — as
+        measured, including abstraction and discharge effects. Q95 thresholds
+        are climatological proxies, not licence Hands-off-Flow values. England
+        only. Independent open-source project — not affiliated with or endorsed
+        by any employer, the Environment Agency, ECMWF, or any water company.</p>
+      <p class="attr">Contains Environment Agency data (Open Government Licence v3.0)
+        · ECMWF Open Data (CC-BY-4.0) · Copernicus ERA5 / SEAS5 · OS Open Rivers
+        (OGL) · Free &amp; open source (MIT) ·
+        <a href="https://github.com/dominicm2023/groundwatercast-uk" rel="noopener">source on GitHub</a> · <a href="/methods/">methods &amp; limitations</a> · <a href="/contact/">contact</a></p>
+    </footer>
+  </main>
+
+  <script src="/vendor/maplibre-gl.js"></script>
+  <script src="/config.js"></script>
+  <script src="/rivers.js"></script>
+</body>
+</html>

@@ -311,10 +311,11 @@ def test_run_empty_models_exits_zero(tmp_path, capsys):
 
 
 def test_run_missing_links_or_catalogue_exits_zero(tmp_path, capsys, monkeypatch):
-    # Real worktree has no data/processed/flow_links.csv or flow_catalogue.csv
-    # (this is the offline dev/test environment — see the PR description for
-    # exactly what's missing locally). ROOT is left unpatched here so the
-    # links/catalogue lookup falls through to that real absence.
+    # Point ROOT at an empty tmp dir so the links/catalogue lookup misses.
+    # (This originally relied on the REAL worktree lacking flow_links.csv —
+    # true on the machine it was written on, false on any machine where the
+    # fleet scan has run. Hermetic now.)
+    monkeypatch.setattr(M, "ROOT", tmp_path)
     pilot_path = tmp_path / "flow_pilot.csv"
     pilot_path.write_text("gauge_id,station_name,floor_skill\ng1,Gauge One,0.1\n",
                           encoding="utf-8")

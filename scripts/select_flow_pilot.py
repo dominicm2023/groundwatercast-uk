@@ -1,14 +1,19 @@
-"""Low-flow Rivers layer — Stage 6 pilot selection
-(``docs/product/lowflow/build_plan.md``).
+"""Low-flow Rivers layer — published-gauge selection
+(``docs/product/lowflow/build_plan.md``; originally the Stage-6 ~50-gauge
+pilot, generalised 2026-07-19 to the full tier-1 fleet for the RiverCast
+expansion).
 
 Reads the Stage-5 fleet scan (``outputs/flow_fleet_scan.csv``) and selects the
-~50-gauge southern chalk pilot DETERMINISTICALLY: every ``tier=="tier1"`` row,
-sorted by ``floor_skill`` ascending (best floor-robust skill first — lower is
-better, ``skill_ratio = mean|obs-P50| / mean|obs-recession|``), ties broken by
-``gauge_id`` for full reproducibility, capped at ``PILOT_SIZE``. Writes
-``data/processed/flow_pilot.csv`` (``gauge_id, station_name, floor_skill`` —
-Q95 is deliberately NOT computed here; that is ``build_flow_models.py``'s job,
-from each gauge's full flow shard once it's ingested).
+published gauge list DETERMINISTICALLY: every ``tier=="tier1"`` row (floor-
+robust only — rain-dependent gauges stay unpublished), minus the curated
+``CURATED_OUT`` register below, sorted by ``floor_skill`` ascending (best
+floor-robust skill first — lower is better, ``skill_ratio =
+mean|obs-P50| / mean|obs-recession|``), ties broken by ``gauge_id`` for full
+reproducibility. Uncapped by default; ``--pilot-size`` remains as a smoke-test
+cap. Writes ``data/processed/flow_pilot.csv``
+(``gauge_id, station_name, floor_skill`` — Q95 is deliberately NOT computed
+here; that is ``build_flow_models.py``'s job, from each gauge's full flow
+shard once it's ingested).
 
 The fleet scan is a long-running background job (Stage 5) that may still be
 mid-run when this is invoked — a partial scan (whatever rows exist so far) is
@@ -34,9 +39,39 @@ ROOT = Path(__file__).resolve().parents[1]
 SCAN_PATH = ROOT / "outputs" / "flow_fleet_scan.csv"
 OUT_PATH = ROOT / "data" / "processed" / "flow_pilot.csv"
 
-PILOT_SIZE = 50
+PILOT_SIZE = None   # uncapped — the whole curated tier-1 fleet publishes
 OUT_COLS = ["gauge_id", "station_name", "floor_skill"]
 REQUIRED_SCAN_COLS = {"gauge_id", "station_name", "tier", "floor_skill"}
+
+# Curation register (2026-07-19, RiverCast expansion): gauges the gate PASSES
+# but that must not publish, gauge_id -> reason. The gate is purely
+# statistical — an operationally-controlled artificial channel produces very
+# persistent flows and sails through it, but its "flow" is a record of gate/
+# sluice/hatch settings, not hydrology, so a recession-based forecast of it
+# is meaningless. Criterion: artificial channels whose flow is set by
+# structure operation are OUT; natural-but-managed rivers (navigations,
+# augmented chalk streams, anabranches) stay IN — the "gauged flow, including
+# abstraction and discharge effects" caveat covers those honestly.
+#
+# Checked and deliberately KEPT (same 2026-07-19 sweep of all 97 tier-1
+# rows): Swaffham Bulbeck / Gutter Bridge Ditch (chalk-catchment spring-fed
+# lode; part of the Lodes-Granta groundwater support scheme — augmented, not
+# structure-driven; NRFA 33052), Staines Moor / Wraysbury River (natural
+# anabranch of the Colne), the Nene, Witham, Ancholme, Medway and Cam gauges
+# (real, if managed, rivers), Newbourne (spring-fed SSSI stream).
+CURATED_OUT = {
+    "db1d776d-2226-4979-8b90-733c0f352d32":
+        "Tollgate @ Cut-off Channel — artificial flood-relief diversion "
+        "channel (Ely Ouse scheme), flow set by gate operation; not a chalk "
+        "stream",
+    "b23821f8-f8e5-4b3d-a821-70913abe37cf":
+        "Wholsea Grange @ Back Delfin / Market Weighton Canal — artificial "
+        "drainage canal, electro-mechanical sluice-operated since 1971",
+    "f053c518-139a-4210-b305-ac3f7ac95075":
+        "Downton New Court Farm @ Newcourt Carrier — artificial 17th-century "
+        "water-meadow/navigation carrier off the Hampshire Avon; flow split "
+        "governed by hatch settings",
+}
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -46,7 +81,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--out", default=str(OUT_PATH),
                     help="path to write the pilot CSV (default: %(default)s)")
     ap.add_argument("--pilot-size", type=int, default=PILOT_SIZE,
-                    help="max gauges in the pilot (default: %(default)s)")
+                    help="max gauges to select (default: uncapped — the "
+                         "whole curated tier-1 fleet; a number here is a "
+                         "smoke-test cap)")
     return ap.parse_args(argv)
 
 
@@ -61,14 +98,18 @@ def _display_path(path: Path) -> str:
         return str(path)
 
 
-def select_pilot(scan: pd.DataFrame, *, pilot_size: int = PILOT_SIZE) -> pd.DataFrame:
-    """Deterministic pilot selection: tier1 rows only, sorted by
-    ``floor_skill`` ascending (ties broken by ``gauge_id``), top
-    ``pilot_size``. Pure function — no I/O, easy to test in isolation."""
+def select_pilot(scan: pd.DataFrame, *,
+                 pilot_size: int | None = PILOT_SIZE) -> pd.DataFrame:
+    """Deterministic selection: tier1 rows only, minus the ``CURATED_OUT``
+    register, sorted by ``floor_skill`` ascending (ties broken by
+    ``gauge_id``), capped at ``pilot_size`` when one is given (default:
+    uncapped). Pure function — no I/O, easy to test in isolation."""
     tier1 = scan[scan["tier"] == "tier1"].copy()
+    tier1 = tier1[~tier1["gauge_id"].isin(CURATED_OUT)]
     tier1 = tier1.sort_values(["floor_skill", "gauge_id"], ascending=[True, True],
                               kind="mergesort")  # stable — reproducible on ties
-    return tier1[OUT_COLS].head(pilot_size).reset_index(drop=True)
+    tier1 = tier1[OUT_COLS].reset_index(drop=True)
+    return tier1 if pilot_size is None else tier1.head(pilot_size)
 
 
 def run(args: argparse.Namespace) -> int:
@@ -90,15 +131,17 @@ def run(args: argparse.Namespace) -> int:
         return 0
 
     n_tier1_total = int((scan["tier"] == "tier1").sum())
+    n_curated_out = int(scan["gauge_id"].isin(CURATED_OUT).sum())
     pilot = select_pilot(scan, pilot_size=args.pilot_size)
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     pilot.to_csv(out_path, index=False)
 
-    print(f"Fleet scan: {len(scan)} gauge(s) scored so far, {n_tier1_total} tier1.")
-    print(f"Pilot: {len(pilot)} gauge(s) selected (cap {args.pilot_size}) "
-          f"-> {_display_path(out_path)}")
+    cap = "uncapped" if args.pilot_size is None else f"cap {args.pilot_size}"
+    print(f"Fleet scan: {len(scan)} gauge(s) scored so far, {n_tier1_total} tier1, "
+          f"{n_curated_out} curated out (see CURATED_OUT).")
+    print(f"Selected: {len(pilot)} gauge(s) ({cap}) -> {_display_path(out_path)}")
     if len(pilot):
         print(f"  floor_skill range: {pilot['floor_skill'].min():.3f}"
               f"..{pilot['floor_skill'].max():.3f}")
