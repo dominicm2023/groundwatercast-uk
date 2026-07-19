@@ -229,18 +229,25 @@
       map.addImage("river-diamond", cctx.getImageData(0, 0, SIZE, SIZE), { sdf: true });
     }
 
+    // Collision-managed, not allow-overlap: at 94 gauges the valley clusters
+    // (several gauges per chalk stream, plus same-site Main/Total pairs)
+    // merged into one blob. Letting MapLibre's collision detection hide the
+    // overlapping diamonds at national zoom keeps each visible mark crisp —
+    // zooming in reveals the rest. symbol-sort-key gives the DRIEST gauges
+    // placement priority, so the low-flow story is never the one hidden.
     map.addLayer({
       id: "stations-flow-dot", type: "symbol", source: "stations",
       filter: ["==", ["get", "station_type"], "flow"],
       layout: {
         "icon-image": "river-diamond",
-        "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.4, 10, 0.75],
-        "icon-allow-overlap": true,
+        "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.32, 10, 0.65],
+        "icon-padding": 1,
+        "symbol-sort-key": ["coalesce", ["get", "percentile"], 100],
         visibility: "none",
       },
       paint: {
         "icon-color": COLOR_EXPR,
-        "icon-halo-color": "#ffffff", "icon-halo-width": 1.4,
+        "icon-halo-color": "#ffffff", "icon-halo-width": 2,
         "icon-opacity": 0.95,
       },
     });
@@ -292,8 +299,8 @@
       map.setLayoutProperty("stations-flow-dot", "visibility", on ? "visible" : "none");
       // rivers view: gauges emphasised, boreholes dimmed but PRESENT
       map.setLayoutProperty("stations-flow-dot", "icon-size", on
-        ? ["interpolate", ["linear"], ["zoom"], 5, 0.55, 10, 1.0]
-        : ["interpolate", ["linear"], ["zoom"], 5, 0.4, 10, 0.75]);
+        ? ["interpolate", ["linear"], ["zoom"], 5, 0.42, 10, 0.85]
+        : ["interpolate", ["linear"], ["zoom"], 5, 0.32, 10, 0.65]);
       applyDotOpacity();
       map.setPaintProperty("stations-dot", "circle-stroke-width", on ? 0.5 : 1);
       map.setPaintProperty("stations-ring", "circle-stroke-opacity", on ? 0.25 : 1);

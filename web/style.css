@@ -112,10 +112,12 @@ a.brand, a.brand:hover { color: #fff; text-decoration: none; }
   background: var(--ink); transform: rotate(45deg); border-radius: 2px; }
 .legend-row .riverline { width: 16px; height: 0; flex: 0 0 auto;
   border-top: 2px solid #4a90c4; border-radius: 2px; }
-/* rivers VIEW on: the GW-specific legend rows step back (boreholes are dimmed
-   on the map — the legend mirrors that), the flow block reads as primary. */
+/* rivers VIEW on: the GW-specific legend rows (forecast ring, faded-fill
+   note) drop out entirely — boreholes are dimmed context on the map, and at
+   two legend blocks the panel was getting crowded. The shared colour rows
+   stay (one below/near/above vocabulary for both station kinds). */
 #legend.rivers-on .legend-ring,
-#legend.rivers-on .legend-note { opacity: 0.45; }
+#legend.rivers-on .legend-note { display: none; }
 
 /* ---- legend ---- */
 #legend {

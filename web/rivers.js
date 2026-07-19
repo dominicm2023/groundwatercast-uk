@@ -71,17 +71,20 @@
           "circle-opacity": 0.35,
         },
       });
+      // Collision-managed (no allow-overlap): valley clusters otherwise merge
+      // into one blob at snapshot zoom. Driest gauges get placement priority.
       map.addLayer({
         id: "gauge-diamonds", type: "symbol", source: "gauges",
         layout: {
           "icon-image": "river-diamond",
-          "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.30, 7, 0.55],
-          "icon-allow-overlap": true,
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.28, 7, 0.5],
+          "icon-padding": 1,
+          "symbol-sort-key": ["coalesce", ["get", "percentile"], 100],
         },
         paint: {
           "icon-color": ["match", ["coalesce", ["get", "status"], "none"],
             "below", PAL.below, "near", PAL.near, "above", PAL.above, PAL.none],
-          "icon-halo-color": "#ffffff", "icon-halo-width": 1,
+          "icon-halo-color": "#ffffff", "icon-halo-width": 1.5,
         },
       });
       map.fitBounds([[-6.3, 49.9], [1.8, 55.9]], { padding: 14, duration: 0 });
