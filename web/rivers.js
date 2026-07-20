@@ -94,7 +94,7 @@
         id: "gauge-diamonds", type: "symbol", source: "gauges",
         layout: {
           "icon-image": "river-diamond",
-          "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.28, 7, 0.5],
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.23, 7, 0.42],
           "icon-allow-overlap": true,
           "symbol-sort-key": ["-", 100, ["coalesce", ["get", "percentile"], 50]],
         },
