@@ -84,24 +84,24 @@
           "circle-opacity": 0.35,
         },
       });
-      // Collision-managed (no allow-overlap): valley clusters otherwise merge
-      // into one blob at snapshot zoom. The generous icon-padding enforces
-      // real breathing room between marks on this small static teaser —
-      // near-touching diamonds read as one blob even when they don't
-      // strictly intersect. Driest gauges get placement priority, so what
-      // survives the cull is the low-flow story.
+      // All 94 gauges, always — hiding any of them on the rivers front page
+      // felt wrong (Dom, 2026-07-20). Overlap is allowed; what stops a
+      // cluster reading as one blob is the dark ink OUTLINE on every
+      // diamond (SDF halo), which keeps each stacked mark's edge visible.
+      // symbol-sort-key: MapLibre draws lower keys first (underneath), so
+      // 100 − percentile puts the DRIEST gauges on top of their cluster.
       map.addLayer({
         id: "gauge-diamonds", type: "symbol", source: "gauges",
         layout: {
           "icon-image": "river-diamond",
           "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.28, 7, 0.5],
-          "icon-padding": 6,
-          "symbol-sort-key": ["coalesce", ["get", "percentile"], 100],
+          "icon-allow-overlap": true,
+          "symbol-sort-key": ["-", 100, ["coalesce", ["get", "percentile"], 50]],
         },
         paint: {
           "icon-color": ["match", ["coalesce", ["get", "status"], "none"],
             "below", PAL.below, "near", PAL.near, "above", PAL.above, PAL.none],
-          "icon-halo-color": "#ffffff", "icon-halo-width": 2,
+          "icon-halo-color": "#1a3a5c", "icon-halo-width": 1.5,
         },
       });
       map.fitBounds([[-6.3, 49.9], [1.8, 55.9]], { padding: 14, duration: 0 });
