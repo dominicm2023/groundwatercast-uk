@@ -45,18 +45,35 @@
       });
     } catch (e) { return; }
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
+    // Start the (i) attribution collapsed over the snapshot — one tap expands
+    // it (MapLibre's own map-click minimize does exactly this class removal),
+    // so the licence text stays a click away without covering the teaser.
+    function collapseAttrib() {
+      var a = host.querySelector(".maplibregl-ctrl-attrib");
+      if (a) a.classList.remove("maplibregl-compact-show");
+    }
+    // The control's internal update re-adds the class on early map events,
+    // so collapse at several settle points; the user's tap still expands it.
+    collapseAttrib();
+    map.once("idle", collapseAttrib);
+    setTimeout(collapseAttrib, 1200);
     map.on("load", function () {
+      collapseAttrib();
       map.addSource("bores", { type: "geojson", data: gj });
       // Mirror the explorer's default "active" view: show only boreholes with a
       // forecast OR a fresh status (drops the ~565 pure-stale grey dots that
       // otherwise wash the snapshot out), and mark forecast boreholes with the
-      // same navy ring the interactive map uses.
-      var activeFilter = ["any",
+      // same navy ring the interactive map uses. RiverCast flow gauges are
+      // excluded — this is the GROUNDWATER snapshot (94 gauges rendered as
+      // anonymous circles just cluttered it); rivers have their own teaser
+      // card and /rivers/ hero map.
+      var notFlow = ["!=", ["get", "station_type"], "flow"];
+      var activeFilter = ["all", notFlow, ["any",
         ["==", ["get", "has_forecast"], true],
-        ["!=", ["coalesce", ["get", "status"], "none"], "none"]];
+        ["!=", ["coalesce", ["get", "status"], "none"], "none"]]];
       map.addLayer({
         id: "bore-ring", type: "circle", source: "bores",
-        filter: ["==", ["get", "has_forecast"], true],
+        filter: ["all", notFlow, ["==", ["get", "has_forecast"], true]],
         paint: {
           "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 4.2, 7, 9],
           "circle-color": "rgba(0,0,0,0)",

@@ -41,7 +41,20 @@
       });
     } catch (e) { return; }
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
+    // Start the (i) attribution collapsed over the snapshot — one tap expands
+    // it (MapLibre's own map-click minimize does exactly this class removal),
+    // so the licence text stays a click away without covering the teaser.
+    function collapseAttrib() {
+      var a = host.querySelector(".maplibregl-ctrl-attrib");
+      if (a) a.classList.remove("maplibregl-compact-show");
+    }
+    // The control's internal update re-adds the class on early map events,
+    // so collapse at several settle points; the user's tap still expands it.
+    collapseAttrib();
+    map.once("idle", collapseAttrib);
+    setTimeout(collapseAttrib, 1200);
     map.on("load", function () {
+      collapseAttrib();
       var c = document.createElement("canvas");
       c.width = c.height = 48;
       var ctx = c.getContext("2d");
@@ -72,19 +85,23 @@
         },
       });
       // Collision-managed (no allow-overlap): valley clusters otherwise merge
-      // into one blob at snapshot zoom. Driest gauges get placement priority.
+      // into one blob at snapshot zoom. The generous icon-padding enforces
+      // real breathing room between marks on this small static teaser —
+      // near-touching diamonds read as one blob even when they don't
+      // strictly intersect. Driest gauges get placement priority, so what
+      // survives the cull is the low-flow story.
       map.addLayer({
         id: "gauge-diamonds", type: "symbol", source: "gauges",
         layout: {
           "icon-image": "river-diamond",
           "icon-size": ["interpolate", ["linear"], ["zoom"], 4, 0.28, 7, 0.5],
-          "icon-padding": 1,
+          "icon-padding": 6,
           "symbol-sort-key": ["coalesce", ["get", "percentile"], 100],
         },
         paint: {
           "icon-color": ["match", ["coalesce", ["get", "status"], "none"],
             "below", PAL.below, "near", PAL.near, "above", PAL.above, PAL.none],
-          "icon-halo-color": "#ffffff", "icon-halo-width": 1.5,
+          "icon-halo-color": "#ffffff", "icon-halo-width": 2,
         },
       });
       map.fitBounds([[-6.3, 49.9], [1.8, 55.9]], { padding: 14, duration: 0 });
