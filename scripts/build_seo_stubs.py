@@ -47,6 +47,18 @@ FLOW_CAVEAT = ("Indicative, experimental — not a drought warning. Gauged flow,
 FLOW_STATUS_LABEL = {"below": "below normal flow", "near": "near normal flow",
                      "above": "above normal flow"}
 _REQUIRED_TYPES = {"WebSite", "WebPage", "Dataset", "Place"}
+# River hub pages (/rivers/<river>/) are collection pages, not Datasets.
+_REQUIRED_HUB_TYPES = {"WebSite", "WebPage", "ItemList", "Place"}
+
+# Rivers modelled in the /valley/test/ 3-D visualisation (the COURSES in
+# scripts/build_valley_rivers.py). A river page links to the valley only when
+# its river is in this set AND the gauge/hub sits inside the valley's bbox —
+# the bbox guard defends against name collisions (there are several "River
+# Dun"s nationally; only the Hampshire one is in the Test-valley model).
+VALLEY_RIVERS = {"River Test", "River Anton", "River Dever", "River Dun",
+                 "Bourne Rivulet", "Wallop Brook", "Pillhill Brook"}
+VALLEY_BBOX = (-1.66, 50.87, -1.20, 51.30)   # matches build_valley_rivers.DEFAULT_BBOX
+VALLEY_URL = "/valley/test/"
 
 
 
@@ -514,7 +526,7 @@ def _flow_head(d, sl, region, indexable):
     )
 
 
-def _flow_page(d, sl, region, indexable):
+def _flow_page(d, sl, region, indexable, hub_url=None):
     stn = d.get("station") or {}
     sid = stn.get("station_id")
     name = stn.get("name") or sid or "Gauge"
@@ -528,8 +540,11 @@ def _flow_page(d, sl, region, indexable):
         (f"{_fmt(lat, 4)}°N {_fmt(lon, 4)}°E" if lat is not None and lon is not None else None),
         (f"EA {esc(str(sid)[:8])}" if sid else None),
     ] if b)
+    # Breadcrumb climbs up to the river hub (/rivers/<river>/) when one exists,
+    # so the gauge stub and its river page form a crawlable category→item pair.
     crumb = ('<a href="/">Home</a> / <a href="/rivers/">Rivers</a> / '
-             '<a href="/explorer/#rivers=1">Map</a> / '
+             + (f'<a href="{hub_url}">{esc(river)}</a> / ' if hub_url and river else '')
+             + '<a href="/explorer/#rivers=1">Map</a> / '
              + (f"{esc(region)} / " if region else "") + esc(name))
     return (
         '<!DOCTYPE html><html lang="en-GB"><head>' + _flow_head(d, sl, region, indexable)
@@ -554,6 +569,7 @@ def _flow_page(d, sl, region, indexable):
            f' · <a href="https://environment.data.gov.uk/hydrology/station/{esc(sid)}" '
            'rel="noopener">EA record ↗</a>' if sid else "")
         + '</p></section>'
+        + _valley_teaser(river, lat, lon) +
         '<section class="bore-detail">'
         f'<div id="detail-body" data-station="{esc(sid)}"><p class="caption">Loading the interactive '
         'forecast…</p></div>'
@@ -623,10 +639,11 @@ def _mini_shell(title, canonical, body):
     )
 
 
-def _browse_html(entries, flow_entries=()):
+def _browse_html(entries, flow_entries=(), river_hubs=()):
     """entries: list of (slug, name, region) boreholes; flow_entries the same
-    for RiverCast gauges (linked under /r/). A crawlable, county-grouped
-    directory — rivers get their own section after the boreholes."""
+    for RiverCast gauges (linked under /r/); river_hubs: (slug, river, region)
+    for the /rivers/<river>/ hubs. A crawlable, county-grouped directory —
+    rivers get their own section (rivers first, then their gauges)."""
     by_region: dict[str, list] = {}
     for sl, name, region in entries:
         by_region.setdefault(region or "Other", []).append((sl, name))
@@ -644,17 +661,28 @@ def _browse_html(entries, flow_entries=()):
             parts.append(f'<li><a href="/b/{esc(sl)}/">{esc(name)}</a></li>')
         parts.append("</ul>")
     if flow_entries:
-        by_region_f: dict[str, list] = {}
-        for sl, name, region in flow_entries:
-            by_region_f.setdefault(region or "Other", []).append((sl, name))
         parts.append('<h1 class="bore-h1" id="rivers">Rivers &amp; flow gauges</h1>'
                      f'<p class="bore-sub">{len(flow_entries)} RiverCast gauges with a daily '
                      'low-flow forecast — <a href="/rivers/">the rivers front page</a> has the '
                      'national picture.</p>'
                      f'<p class="bore-caveat">⚠ {esc(FLOW_CAVEAT)}</p>')
+        if river_hubs:
+            by_region_h: dict[str, list] = {}
+            for hs, river, region in river_hubs:
+                by_region_h.setdefault(region or "Other", []).append((hs, river))
+            parts.append('<h2 class="bore-browse-h">Rivers</h2><ul class="bore-browse-list">')
+            for region in sorted(by_region_h):
+                for hs, river in sorted(by_region_h[region], key=lambda x: (x[1] or "").lower()):
+                    reg = f' <span class="caption">({esc(region)})</span>' if region else ""
+                    parts.append(f'<li><a href="/rivers/{esc(hs)}/">{esc(river)}</a>{reg}</li>')
+            parts.append("</ul>")
+        by_region_f: dict[str, list] = {}
+        for sl, name, region in flow_entries:
+            by_region_f.setdefault(region or "Other", []).append((sl, name))
+        parts.append('<h2 class="bore-browse-h">Gauges</h2>')
         for region in sorted(by_region_f):
-            parts.append(f'<h2 class="bore-browse-h">{esc(region)} '
-                         f'<span class="caption">({len(by_region_f[region])})</span></h2>'
+            parts.append(f'<h3 class="bore-browse-h">{esc(region)} '
+                         f'<span class="caption">({len(by_region_f[region])})</span></h3>'
                          '<ul class="bore-browse-list">')
             for sl, name in sorted(by_region_f[region], key=lambda x: (x[1] or "").lower()):
                 parts.append(f'<li><a href="/r/{esc(sl)}/">{esc(name)}</a></li>')
@@ -667,6 +695,194 @@ def _sitemap_xml(urls):
     rows = "".join(f"<url><loc>{loc}</loc><lastmod>{lm}</lastmod></url>" for loc, lm in urls)
     return ('<?xml version="1.0" encoding="UTF-8"?>'
             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + rows + "</urlset>")
+
+
+# ---------------------------------------------------------------------------
+# River hub pages — /rivers/<river>/. One per river with ≥1 published gauge,
+# grouped by (river_name, region) so two same-named rivers in different
+# counties (e.g. the Dorset vs Surrey River Wey) don't merge onto one page.
+# Deliberately a RIVER-level page, distinct from the gauge stub: river
+# character + all its gauges + the crawlable boreholes that feed it + the
+# valley teaser. That "category page" intent is what keeps a single-gauge
+# hub from reading as a thin duplicate of its one gauge stub.
+# ---------------------------------------------------------------------------
+
+def _valley_teaser(river, lat, lon):
+    """A 3-D valley cross-link, shown only when the river is actually in the
+    /valley/test/ model AND the point is inside the valley bbox (the bbox is
+    the collision guard — name alone isn't enough for 'River Dun')."""
+    if river not in VALLEY_RIVERS:
+        return ""
+    try:
+        if not (VALLEY_BBOX[0] <= float(lon) <= VALLEY_BBOX[2]
+                and VALLEY_BBOX[1] <= float(lat) <= VALLEY_BBOX[3]):
+            return ""
+    except (TypeError, ValueError):
+        return ""
+    return ('<section class="bore-summary"><h2>See this river in 3-D</h2>'
+            f'<p>The {esc(river)} runs through the '
+            f'<a href="{VALLEY_URL}">River Test valley 3-D model</a> — replay three years of '
+            'measured rain, groundwater and river flow, then walk the forecast six months '
+            'ahead.</p></section>')
+
+
+def _assign_hub_slugs(keys):
+    """(river, region) keys → collision-safe slugs. A river name unique across
+    regions keeps its bare slug (river-test); a name shared by two regions is
+    disambiguated with the region (river-wey-dorset / river-wey-surrey)."""
+    from collections import defaultdict
+    by_base: dict[str, list] = defaultdict(list)
+    for k in keys:
+        by_base[slug(k[0])].append(k)
+    out: dict = {}
+    for base, ks in by_base.items():
+        if len(ks) == 1:
+            out[ks[0]] = base
+            continue
+        used: dict[str, tuple] = {}
+        for k in sorted(ks, key=lambda x: (x[1] or "")):
+            s = slug(f"{k[0]} {k[1]}") if k[1] else base
+            while s in used:                       # last-resort de-dup
+                s = f"{s}-{len(used)}"
+            used[s] = k
+            out[k] = s
+    return out
+
+
+def _river_gauge_chip(st):
+    s = (st or {}).get("status")
+    if not s:
+        return '<span class="chip none">no current status</span>'
+    pc = pct_ordinal((st or {}).get("percentile"))
+    p = f' <span class="chip-pct">{pc}</span>' if pc else ""
+    return f'<span class="chip {esc(s)}">{esc(FLOW_STATUS_LABEL.get(s, s))}{p}</span>'
+
+
+def _river_hub_jsonld(river, region, hub_slug, gauges):
+    base = f"{SITE}/rivers/{hub_slug}/"
+    items = [{"@type": "ListItem", "position": i, "url": f"{SITE}/r/{g['slug']}/",
+              "name": g["title"]} for i, g in enumerate(gauges, 1)]
+    addr = {"@type": "PostalAddress", "addressCountry": "GB"}
+    if region:
+        addr["addressRegion"] = region
+    place = {"@type": "Place", "@id": base + "#place", "name": river, "address": addr,
+             "containedInPlace": {"@type": "Country", "name": "England"}}
+    webpage = {"@type": "WebPage", "@id": base + "#webpage",
+               "name": f"{river} — river flow forecast", "url": base, "inLanguage": "en-GB",
+               "isPartOf": {"@id": SITE + "/#website"}, "about": {"@id": base + "#place"}}
+    itemlist = {"@type": "ItemList", "@id": base + "#gauges",
+                "name": f"Flow gauges on the {river}", "numberOfItems": len(gauges),
+                "itemListElement": items}
+    graph = {"@context": "https://schema.org", "@graph": [
+        {"@type": "WebSite", "@id": SITE + "/#website", "name": "GroundwaterCast UK",
+         "url": SITE + "/", "inLanguage": "en-GB"},
+        webpage, place, itemlist]}
+    return json.dumps(graph, separators=(",", ":"), ensure_ascii=False).replace("</", "<\\/")
+
+
+def _river_hub_page(river, region, hub_slug, gauges, bore_links):
+    n = len(gauges)
+    below = sum(1 for g in gauges if (g["status"] or {}).get("status") == "below")
+    withstatus = sum(1 for g in gauges if (g["status"] or {}).get("status"))
+    any_wb = any(g["winterbourne"] for g in gauges)
+    base = f"{SITE}/rivers/{hub_slug}/"
+    rtitle = f", {region}" if region else ""
+    rphrase = f" in {region}" if region else ""
+    desc = (f"Daily low-flow forecasts for the {river}{rphrase}, England — {n} "
+            f"gauge{'s' if n != 1 else ''} with current flow vs normal, a 14-day fan, and the "
+            "chance of dropping below Q95. Open data; indicative, not a drought warning.")
+    jl = _river_hub_jsonld(river, region, hub_slug, gauges)
+    head = (
+        '<meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f'<title>{esc(river)} — river flow forecast{esc(rtitle)} | GroundwaterCast</title>'
+        f'<meta name="description" content="{esc(desc)}">'
+        f'<link rel="canonical" href="{base}">'
+        '<meta name="robots" content="index,follow,max-image-preview:large">'
+        '<meta name="theme-color" content="#1a3a5c">'
+        '<link rel="icon" type="image/svg+xml" href="/favicon.svg">'
+        '<link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/borehole.css">'
+        '<meta property="og:type" content="website">'
+        '<meta property="og:site_name" content="GroundwaterCast UK">'
+        '<meta property="og:locale" content="en_GB">'
+        f'<meta property="og:title" content="{esc(river)} — river flow forecast (indicative)">'
+        f'<meta property="og:description" content="{esc(desc)}">'
+        f'<meta property="og:url" content="{base}">'
+        f'<meta property="og:image" content="{SITE}/og/default.png">'
+        f'<script type="application/ld+json">{jl}</script>'
+    )
+    sub = " · ".join(x for x in [
+        f"{n} gauge" + ("s" if n != 1 else ""),
+        "winterbourne" if any_wb else None,
+        esc(region) if region else None,
+    ] if x)
+    crumb = ('<a href="/">Home</a> / <a href="/rivers/">Rivers</a> / '
+             + (f"{esc(region)} / " if region else "") + esc(river))
+    lede = f"Daily low-flow forecasts for the {esc(river)}"
+    if withstatus:
+        verb = "sits" if withstatus == 1 else "sit"
+        gword = "gauge" if withstatus == 1 else "gauges"
+        lede += (f". Today <b>{below}</b> of the {withstatus} {gword} with a fresh reading "
+                 f"{verb} below normal flow for the season.")
+    else:
+        lede += "."
+    cards = "".join(
+        f'<a class="card" href="/r/{esc(g["slug"])}/">'
+        f'<div class="card-head"><span class="nm">{esc(g["name"])}</span>'
+        f'{_river_gauge_chip(g["status"])}</div>'
+        f'<div class="mini">{esc(g["title"])}</div></a>' for g in gauges)
+    gauge_block = ('<section class="bore-summary"><h2>Gauges on this river</h2>'
+                   f'<div class="cards three">{cards}</div></section>')
+    bore_block = ""
+    if bore_links:
+        lis = "".join(f'<li><a href="/b/{esc(bs)}/">{esc(bn)}</a></li>' for bs, bn in bore_links)
+        bore_block = ('<section class="bore-summary"><h2>Groundwater feeding this river</h2>'
+                      '<p class="caption">In a chalk stream the summer flow is groundwater '
+                      'draining — these boreholes feed this river and carry their own '
+                      f'forecasts.</p><ul class="bore-browse-list">{lis}</ul></section>')
+    valley = _valley_teaser(river, gauges[0]["lat"], gauges[0]["lon"])
+    body = (
+        _topnav("rivers") +
+        '<div class="bore-wrap">'
+        f'<nav class="bore-crumb">{crumb}</nav>'
+        '<div class="bore-masthead"><div class="bore-mast-id">'
+        f'<h1 class="bore-h1">{esc(river)}</h1>'
+        f'<p class="bore-sub">{sub}</p></div></div>'
+        f'<p class="bore-caveat">⚠ {esc(FLOW_CAVEAT)} <a href="/methods/">How this works</a>.</p>'
+        f'<section class="bore-summary"><p class="bore-status-line">{lede}</p></section>'
+        + gauge_block + bore_block + valley +
+        '</div>'
+        '<footer class="bore-foot"><p class="disclaimer"><b>Indicative, experimental research '
+        'forecast.</b> Not a drought warning; not for safety-critical or operational abstraction '
+        'decisions. RiverCast forecasts gauged flow — as measured, including abstraction and '
+        'discharge effects. England-only. Independent open-source project — not affiliated with '
+        'or endorsed by any employer, the Environment Agency, ECMWF, or any water company.</p>'
+        '<p class="caption">Contains EA data (OGL v3) · ECMWF Open Data (CC-BY-4.0) · Copernicus '
+        'ERA5/SEAS5 · Free &amp; open source (MIT) · <a href="/contact/">Contact</a>.</p></footer>')
+    return "<!DOCTYPE html><html lang=\"en-GB\"><head>" + head + "</head><body>" + body + "</body></html>"
+
+
+def _check_hub(html, sl, problems):
+    head = html.split("</head>", 1)[0]
+    if f'canonical" href="{SITE}/rivers/{sl}/"' not in head:
+        problems.append(f"rivers/{sl}: canonical")
+    if f'og:url" content="{SITE}/rivers/{sl}/"' not in head:
+        problems.append(f"rivers/{sl}: og:url != canonical")
+    title = re.search(r"<title>(.*?)</title>", head)
+    if title and ("None" in title.group(1) or "null" in title.group(1)):
+        problems.append(f"rivers/{sl}: leaked None/null in title")
+    m = _JSONLD_RE.search(head)
+    if not m:
+        problems.append(f"rivers/{sl}: no JSON-LD")
+        return
+    try:
+        jl = json.loads(m.group(1).replace("<\\/", "</"))
+    except Exception as exc:
+        problems.append(f"rivers/{sl}: JSON-LD parse error: {exc}")
+        return
+    types = {n.get("@type") for n in jl.get("@graph", [])}
+    if not _REQUIRED_HUB_TYPES <= types:
+        problems.append(f"rivers/{sl}: JSON-LD missing types {_REQUIRED_HUB_TYPES - types}")
 
 
 def build(pack_dir: Path = PACK_DIR, out_dir: Path = OUT_DIR, today: str | None = None,
@@ -697,19 +913,60 @@ def build(pack_dir: Path = PACK_DIR, out_dir: Path = OUT_DIR, today: str | None 
     entries: list[tuple] = []                                  # (slug, name, region)
     flow_entries: list[tuple] = []                             # RiverCast gauges (/r/)
     flow_out_dir = web_dir / "r"
+    rivers_out_dir = web_dir / "rivers"
     # home + top-level pages + directory (all editorial, always fresh-dated)
     urls = [(f"{SITE}/", today), (f"{SITE}/rivers/", today), (f"{SITE}/about/", today),
             (f"{SITE}/methods/", today), (f"{SITE}/contact/", today),
             (f"{SITE}/explorer/", today), (f"{SITE}/browse/", today),
             (f"{SITE}/valley/test/", today)]
-    n = n_flow = noindex = noregion = 0
+    n = n_flow = n_hub = noindex = noregion = 0
     problems: list[str] = []
+
+    # Load every station detail once — the stub loop below AND the river-hub
+    # pre-scan both need it, and the file set is small.
+    docs = []
     for fp in sorted(pack_dir.glob("*.json")):   # sorted → deterministic slug collisions
         if fp.name == "index.json":
             continue                     # the stations/index.json catalogue, not a station
-        d = json.loads(fp.read_text(encoding="utf-8"))
-        if not isinstance(d, dict):
-            continue                     # defensive: only station detail dicts
+        try:
+            d = json.loads(fp.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if isinstance(d, dict):          # defensive: only station detail dicts
+            docs.append(d)
+
+    # Pre-scan: group published flow gauges by (river, region) for the
+    # /rivers/<river>/ hubs, and map borehole sid → (slug, name) so a hub can
+    # link the boreholes that feed the river as CRAWLABLE anchors (the on-page
+    # panel builds that list in JS, which crawlers never see).
+    bore_by_sid: dict = {}
+    river_groups: dict = {}                      # (river, region) -> [gauge record, ...]
+    for d in docs:
+        stn = d.get("station") or {}
+        sid = stn.get("station_id")
+        sl = stn.get("slug") or slug(stn.get("name") or sid or "")
+        if stn.get("station_type") == "flow":
+            river = (stn.get("river_name") or "").split("|")[0].strip()
+            if not river:
+                continue                 # no river name (e.g. Nene Valley) → no hub
+            key = (river, region_for(stn.get("lat"), stn.get("lon")))
+            river_groups.setdefault(key, []).append({
+                "sid": sid, "slug": sl, "name": stn.get("name") or sid,
+                "title": _flow_title_name(stn), "status": d.get("status") or {},
+                "winterbourne": bool(stn.get("winterbourne") and stn.get("dry_months")),
+                "lat": stn.get("lat"), "lon": stn.get("lon"),
+                "linked": stn.get("linked_boreholes") or [],
+            })
+        elif sid:
+            bore_by_sid[sid] = (sl, stn.get("name") or sid)
+    hub_slug_of = _assign_hub_slugs(list(river_groups))       # (river, region) -> slug
+    hub_url_by_sid: dict = {}
+    for key, recs in river_groups.items():
+        for r in recs:
+            if r["sid"]:
+                hub_url_by_sid[r["sid"]] = f"/rivers/{hub_slug_of[key]}/"
+
+    for d in docs:
         stn = d.get("station") or {}
         is_flow = stn.get("station_type") == "flow"
         sid = stn.get("station_id")
@@ -734,7 +991,8 @@ def build(pack_dir: Path = PACK_DIR, out_dir: Path = OUT_DIR, today: str | None 
             # RiverCast gauges get their OWN template (flow vocabulary — the
             # GW template speaks "borehole"/"aquifer"/mAOD and must never be
             # reused for a gauge) at /r/<slug>/. No og:image card in v1.
-            html = _flow_page(d, sl, region, indexable)
+            html = _flow_page(d, sl, region, indexable,
+                              hub_url=hub_url_by_sid.get(sid))
             _check(html, sl, problems, base="r")
             dst = flow_out_dir / sl
             store_key = f"r/{sl}"
@@ -768,21 +1026,52 @@ def build(pack_dir: Path = PACK_DIR, out_dir: Path = OUT_DIR, today: str | None 
         if indexable:                                            # don't sitemap noindex pages
             urls.append((page_url, lm))
 
+    # River hubs (/rivers/<river>/) — one per river with ≥1 published gauge.
+    # Written after the stub loop so bore_by_sid is fully populated.
+    river_hubs: list[tuple] = []                  # (hub_slug, river, region) for /browse
+    if river_groups:
+        rivers_out_dir.mkdir(parents=True, exist_ok=True)
+    for key in sorted(river_groups):
+        river, region = key
+        hs = hub_slug_of[key]
+        recs = sorted(river_groups[key], key=lambda r: (r["name"] or "").lower())
+        seen_b: set = set()
+        bore_links: list = []
+        for r in recs:
+            for bsid in r["linked"]:
+                if bsid in bore_by_sid and bsid not in seen_b:
+                    seen_b.add(bsid)
+                    bore_links.append(bore_by_sid[bsid])
+        html = _river_hub_page(river, region, hs, recs, bore_links)
+        _check_hub(html, hs, problems)
+        dst = rivers_out_dir / hs
+        dst.mkdir(parents=True, exist_ok=True)
+        (dst / "index.html").write_text(html, encoding="utf-8")
+        n_hub += 1
+        river_hubs.append((hs, river, region))
+        store_key = f"rivers/{hs}"
+        stable = re.sub(r" · \d+ d(?: old)?", "", html)
+        hh = hashlib.sha256(stable.encode("utf-8")).hexdigest()
+        prev = store.get(store_key)
+        lm = prev["lastmod"] if (prev and prev.get("hash") == hh) else today
+        new_store[store_key] = {"hash": hh, "lastmod": lm}
+        urls.append((f"{SITE}/rivers/{hs}/", lm))
+
     browse_dir.mkdir(parents=True, exist_ok=True)
-    (browse_dir / "index.html").write_text(_browse_html(entries, flow_entries),
-                                           encoding="utf-8")
+    (browse_dir / "index.html").write_text(
+        _browse_html(entries, flow_entries, river_hubs), encoding="utf-8")
     sitemap_path.write_text(_sitemap_xml(urls), encoding="utf-8")
     robots_path.write_text(f"User-agent: *\nAllow: /\nSitemap: {SITE}/sitemap.xml\n", encoding="utf-8")
     lastmod_store.parent.mkdir(parents=True, exist_ok=True)
     lastmod_store.write_text(json.dumps(new_store), encoding="utf-8")
 
-    print(f"wrote {n} borehole + {n_flow} river stubs + /browse + sitemap "
-          f"({len(urls)} urls) + robots  (noindex {noindex}, no-region {noregion})")
+    print(f"wrote {n} borehole + {n_flow} river stubs + {n_hub} river hubs + /browse + "
+          f"sitemap ({len(urls)} urls) + robots  (noindex {noindex}, no-region {noregion})")
     if problems:
         for p in problems[:25]:
             print("  FAIL:", p)
         raise SystemExit(f"{len(problems)} stub self-check failure(s)")
-    return {"stubs": n, "flow_stubs": n_flow, "noindex": noindex,
+    return {"stubs": n, "flow_stubs": n_flow, "river_hubs": n_hub, "noindex": noindex,
             "noregion": noregion, "sitemap_urls": len(urls)}
 
 

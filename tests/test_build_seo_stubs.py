@@ -102,6 +102,7 @@ def test_build_smoke(tmp_path):
                     og_manifest=tmp_path / "no-cards.json")   # raises on self-check failure
     assert stats["stubs"] == 2            # boreholes only in the GW count
     assert stats["flow_stubs"] == 1
+    assert stats["river_hubs"] == 1       # one river (River Chalkbourne) → one hub
     assert stats["noindex"] == 1          # the empty borehole
     assert (out / "wilgate-green" / "index.html").exists()
     assert (out / "empty-bh" / "index.html").exists()
@@ -128,9 +129,19 @@ def test_build_smoke(tmp_path):
     assert "/b/empty-bh/" not in sm       # noindex page excluded from sitemap
     assert "<loc>https://groundwatercast.com/r/chalkbourne-gauge/</loc>" in sm
     assert "<loc>https://groundwatercast.com/rivers/</loc>" in sm
+    assert "<loc>https://groundwatercast.com/rivers/river-chalkbourne/</loc>" in sm
     # home + rivers + about + methods + contact + explorer + browse + valley
-    # + wilgate-green + chalkbourne-gauge
-    assert stats["sitemap_urls"] == 10
+    # + wilgate-green + chalkbourne-gauge + river-chalkbourne hub
+    assert stats["sitemap_urls"] == 11
+
+    # the river hub: river-level page linking down to its gauge, ItemList JSON-LD,
+    # and the gauge stub's breadcrumb climbs back up to it (crawlable pair).
+    hub = (web / "rivers" / "river-chalkbourne" / "index.html").read_text(encoding="utf-8")
+    assert "River Chalkbourne" in hub and "/r/chalkbourne-gauge/" in hub
+    hub_jl = _jsonld(hub)
+    assert {"WebSite", "WebPage", "ItemList", "Place"} <= {n["@type"] for n in hub_jl["@graph"]}
+    gstub = (web / "r" / "chalkbourne-gauge" / "index.html").read_text(encoding="utf-8")
+    assert '<a href="/rivers/river-chalkbourne/">River Chalkbourne</a>' in gstub
     assert "<loc>https://groundwatercast.com/methods/</loc>" in sm
     assert "<loc>https://groundwatercast.com/about/</loc>" in sm
     assert "<loc>https://groundwatercast.com/contact/</loc>" in sm
@@ -219,7 +230,42 @@ def test_flow_title_name_variants():
         == "Hampshire Avon at Amesbury"
 
 
-def test_breach_tile_matches_detail_js_pct():
+def test_valley_teaser_gated_by_name_and_bbox():
+    # in the valley river set AND inside the Test-valley bbox → link shown
+    assert "/valley/test/" in B._valley_teaser("River Test", 51.15, -1.44)
+    # right name, wrong place (a different "River Dun" outside the bbox) → nothing
+    assert B._valley_teaser("River Dun", 54.0, -2.0) == ""
+    # not a valley river → nothing, even inside the bbox
+    assert B._valley_teaser("River Itchen", 51.05, -1.35) == ""
+
+
+def test_hub_slugs_disambiguate_same_name_across_regions():
+    slugs = B._assign_hub_slugs([("River Wey", "Dorset"), ("River Wey", "Surrey"),
+                                 ("River Test", "Hampshire")])
+    assert slugs[("River Test", "Hampshire")] == "river-test"          # unique → bare
+    assert slugs[("River Wey", "Dorset")] != slugs[("River Wey", "Surrey")]  # split
+    assert "dorset" in slugs[("River Wey", "Dorset")]
+
+
+def test_river_hub_page_multi_gauge_and_valley_and_boreholes():
+    gauges = [
+        {"slug": "chilbolton-main", "name": "Chilbolton Main",
+         "title": "River Test at Chilbolton Main",
+         "status": {"status": "below", "percentile": 8.0}, "winterbourne": False,
+         "lat": 51.15, "lon": -1.44},
+        {"slug": "chilbolton-total", "name": "Chilbolton Total",
+         "title": "River Test at Chilbolton Total",
+         "status": {"status": "near", "percentile": 45.0}, "winterbourne": False,
+         "lat": 51.15, "lon": -1.44},
+    ]
+    html = B._river_hub_page("River Test", "Hampshire", "river-test", gauges,
+                             [("test-bh", "Test Borehole")])
+    assert f'<link rel="canonical" href="{B.SITE}/rivers/river-test/">' in html
+    assert "/r/chilbolton-main/" in html and "/r/chilbolton-total/" in html
+    assert "2 gauges" in html
+    assert "/valley/test/" in html                       # Test is a valley river, in bbox
+    assert "/b/test-bh/" in html                         # feeding-borehole link is crawlable
+    assert "<b>1</b> of the 2 gauges" in html            # today-summary (1 below)
     from scripts.seo_common import pct_str
     assert pct_str(0.995) == ">99%"     # honesty ceiling — never "100%"
     assert pct_str(0.003) == "<1%"      # honesty floor — never "0%"
