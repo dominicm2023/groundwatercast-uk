@@ -30,15 +30,16 @@
     {"@type":"Organization","@id":"https://groundwatercast.com/#org","name":"GroundwaterCast","url":"https://groundwatercast.com/","description":"An independent, open-source project publishing indicative groundwater forecasts for England from open data."}
   ]}
   </script>
-  <link rel="stylesheet" href="/vendor/maplibre-gl.css" />
+  <link rel="preload" href="/vendor/maplibre-gl.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+  <noscript><link rel="stylesheet" href="/vendor/maplibre-gl.css" /></noscript>
   <link rel="stylesheet" href="/home.css" />
 </head>
-<body>
+<body class="home-page">
   <header class="site-top">
     <a class="site-brand" href="/">
       <img class="logo" src="/favicon.svg" width="34" height="34" alt="" />
       <div>
-        <h1>GroundwaterCast&nbsp;UK</h1>
+        <p class="brandname">GroundwaterCast&nbsp;UK</p>
         <p class="tagline">per-borehole groundwater forecasts · open data</p>
       </div>
     </a>
@@ -54,7 +55,7 @@
   <main>
     <section class="wrap hero">
       <div class="hero-copy">
-        <h2>England's groundwater,<br />per&nbsp;borehole.</h2>
+        <h1>England's groundwater,<br />per&nbsp;borehole.</h1>
         <p class="lede" id="national-lede">
           Daily probabilistic groundwater forecasts for every monitored borehole in England.
         </p>
@@ -152,7 +153,7 @@
           model built site by site. That deliberate trade, breadth over physical
           detail, is what lets a single open, reproducible method run across every
           monitored borehole in England. It complements detailed local groundwater
-          studies rather than replacing them. <a href="/about/">How it works →</a></p>
+          studies rather than replacing them. <a href="/about/">See how our daily groundwater forecast works →</a></p>
       </div>
     </section>
 

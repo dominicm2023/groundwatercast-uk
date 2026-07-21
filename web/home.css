@@ -39,7 +39,7 @@ h1, h2, h3 { color: var(--ink); }
 .site-brand { display: flex; align-items: center; gap: 10px; color: #fff; }
 .site-brand:hover { text-decoration: none; }
 .site-brand .logo { width: 34px; height: 34px; flex: 0 0 auto; display: block; }
-.site-brand h1 { font-size: 1.06rem; margin: 0; font-weight: 700; letter-spacing: -0.01em; color: #fff; }
+.site-brand .brandname { font-size: 1.06rem; margin: 0; font-weight: 700; letter-spacing: -0.01em; color: #fff; }
 .site-brand .tagline { margin: 0; font-size: 0.72rem; color: #c3d4e6; }
 .site-nav { display: flex; align-items: center; gap: 4px; }
 .site-nav a {
@@ -58,7 +58,7 @@ h1, h2, h3 { color: var(--ink); }
   display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 40px;
   align-items: center; padding: 52px 0 40px;
 }
-.hero h2 {
+.hero h1 {
   font-size: 2.6rem; line-height: 1.08; margin: 0 0 14px;
   font-weight: 750; letter-spacing: -0.02em;
 }
@@ -201,7 +201,7 @@ a.card:hover {
 
 @media (max-width: 860px) {
   .hero { grid-template-columns: 1fr; gap: 26px; padding: 34px 0 26px; }
-  .hero h2 { font-size: 2.1rem; }
+  .hero h1 { font-size: 2.1rem; }
   .hero-map { aspect-ratio: 5 / 4; max-height: 360px; }
   .cards.three { grid-template-columns: 1fr; }
   .site-brand .tagline { display: none; }
@@ -212,7 +212,7 @@ a.card:hover {
   .site-top { padding: 10px 10px; gap: 8px; }
   .site-brand { gap: 7px; }
   .site-brand .logo { width: 26px; height: 26px; }
-  .site-brand h1 { font-size: 0.92rem; }
+  .site-brand .brandname { font-size: 0.92rem; }
   .site-nav { gap: 0; }
   .site-nav a { padding: 6px 6px; font-size: 0.82rem; }
   .site-nav a.primary { white-space: nowrap; padding: 6px 10px; }
@@ -224,8 +224,10 @@ a.card:hover {
 
 @media (max-width: 420px) {
   /* Browse is duplicated by the hero "Browse all boreholes" button right
-     below and the footer — drop it before anything overflows */
-  .site-nav a[href="/browse/"], .site-nav a.nav-methods { display: none; }
+     below and the footer — drop it before anything overflows. Scoped to the
+     home page only: /rivers/ shares this stylesheet but has no duplicate CTA,
+     so it must keep these nav links. */
+  body.home-page .site-nav a[href="/browse/"], body.home-page .site-nav a.nav-methods { display: none; }
 }
 
 .stat-pill .stat-spark { display: inline-flex; align-items: center; margin-left: 6px; }

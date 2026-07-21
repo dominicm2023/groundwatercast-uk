@@ -153,7 +153,8 @@
     if (pool.length) picks.push(pool[0]);
     if (pool.length > 1) picks.push(pool[1]);
     if (pool.length > 2) picks.push(pool[pool.length - 1]);
-    if (!picks.length) { host.innerHTML = '<span class="loading">No current readings available.</span>'; return; }
+    if (!picks.length) { host.innerHTML = '<span class="loading">No current readings stand out today — ' +
+      '<a href="/explorer/">open the map</a>.</span>'; return; }
     host.classList.remove("loading");
     host.innerHTML = picks.map(function (f) {
       var p = f.properties;

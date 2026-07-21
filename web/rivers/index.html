@@ -13,7 +13,7 @@
   <meta property="og:site_name" content="GroundwaterCast UK" />
   <meta property="og:locale" content="en_GB" />
   <meta property="og:title" content="RiverCast — daily river low-flow forecasts for England's chalk streams" />
-  <meta property="og:description" content="Daily low-flow forecasts for England's chalk streams and winterbournes — flow vs normal, a 14-day fan, and the chance of dropping below the Q95 low-flow threshold. Open data, verified daily." />
+  <meta property="og:description" content="Daily low-flow forecasts for England's chalk streams and winterbournes — flow vs normal, a 14-day fan, and the chance of dropping below the Q95 low-flow threshold. Updated daily from open data. Indicative, not a warning." />
   <meta property="og:url" content="https://groundwatercast.com/rivers/" />
   <meta property="og:image" content="https://groundwatercast.com/og/default.png" />
   <meta property="og:image:width" content="1200" />
@@ -26,15 +26,34 @@
     {"@type":"WebPage","@id":"https://groundwatercast.com/rivers/#webpage","url":"https://groundwatercast.com/rivers/","name":"RiverCast — daily river low-flow forecasts for England's chalk streams","isPartOf":{"@id":"https://groundwatercast.com/#website"},"inLanguage":"en-GB","description":"Daily per-gauge low-flow forecasts for England's chalk streams and winterbournes, built on open data."}
   ]}
   </script>
-  <link rel="stylesheet" href="/vendor/maplibre-gl.css" />
+  <link rel="preload" href="/vendor/maplibre-gl.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+  <noscript><link rel="stylesheet" href="/vendor/maplibre-gl.css" /></noscript>
   <link rel="stylesheet" href="/home.css" />
+  <link rel="stylesheet" href="/rivers.css" />
+  <style>
+    /* The page's single <h1> is the keyword hero line below, not the brand
+       lockup (SEO) — but home.css (owned elsewhere) styles the brand text via
+       the ".site-brand h1" tag selector, so demoting that element to a <p>
+       needs its look replicated here rather than editing home.css. Mirrors
+       home.css's ".site-brand h1" / ".hero h2" rules exactly. */
+    .site-brand p.brand-name { font-size: 1.06rem; margin: 0; font-weight: 700; letter-spacing: -0.01em; color: #fff; }
+    .hero h1 { font-size: 2.6rem; line-height: 1.08; margin: 0 0 14px; font-weight: 750; letter-spacing: -0.02em; }
+    @media (max-width: 860px) { .hero h1 { font-size: 2.1rem; } }
+    @media (max-width: 560px) { .site-brand p.brand-name { font-size: 0.92rem; } }
+  </style>
+  <noscript><style>
+    /* #rivers-dir-sec starts [hidden] and is only unhidden by rivers.js once
+       the directory renders — without JS that never happens, so force it
+       visible for the noscript fallback link inside it. */
+    #rivers-dir-sec { display: block !important; }
+  </style></noscript>
 </head>
 <body>
   <header class="site-top">
     <a class="site-brand" href="/">
       <img class="logo" src="/favicon.svg" width="34" height="34" alt="" />
       <div>
-        <h1>GroundwaterCast&nbsp;UK</h1>
+        <p class="brand-name">GroundwaterCast&nbsp;UK</p>
         <p class="tagline">per-borehole groundwater forecasts · open data</p>
       </div>
     </a>
@@ -50,7 +69,7 @@
   <main>
     <section class="wrap hero">
       <div class="hero-copy">
-        <h2>England's chalk streams,<br />gauge&nbsp;by&nbsp;gauge.</h2>
+        <h1>England's chalk streams,<br />gauge&nbsp;by&nbsp;gauge.</h1>
         <p class="lede" id="rivers-lede">
           Daily low-flow forecasts for England's chalk streams and
           winterbournes — the rivers that groundwater feeds.
@@ -71,11 +90,20 @@
           <a class="cta ghost" href="/">Groundwater home</a>
         </div>
       </div>
-      <div class="hero-map" id="hero-map" aria-label="Snapshot map of monitored river flow gauges in England, coloured by current status">
+      <div class="hero-map" id="hero-map" aria-label="Interactive map of England's monitored rivers — click a river or gauge to open its page">
         <div id="hero-map-gl"></div>
-        <a class="map-cover" href="/explorer/#rivers=1" aria-label="Open the interactive rivers map"></a>
-        <span class="maplab" id="hero-map-lab">Live snapshot — click to open the interactive map.</span>
+        <span class="maplab" id="hero-map-lab">Loading the interactive map…</span>
       </div>
+    </section>
+
+    <section class="wrap section" id="rivers-dir-sec" hidden>
+      <p class="eyebrow">Every river</p>
+      <h3>Browse rivers by county</h3>
+      <p class="intro">Each river has its own page — the gauges along it, the
+        boreholes that feed it, and the 14-day low-flow outlook. Or click a
+        river line on the map above.</p>
+      <div class="rv-dir" id="rivers-dir"></div>
+      <noscript><p><a href="/browse/">Browse the full directory of rivers and gauges →</a></p></noscript>
     </section>
 
     <section class="wrap section">
@@ -106,7 +134,7 @@
 
     <section class="wrap section">
       <p class="eyebrow">For abstraction &amp; licensing work</p>
-      <h3>Q95, Hands-off Flow, and your own trigger levels</h3>
+      <h3>Q95, Hands-off-Flow, and your own trigger levels</h3>
       <div class="cards three">
         <div class="card">
           <div class="nm">Q95 as the reference</div>

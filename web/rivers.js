@@ -28,7 +28,29 @@
   // link is the product edge — never hide groundwater entirely), flow gauges
   // as status-coloured diamonds on top. Same SDF-diamond trick as the
   // explorer's setupRiverLayer, so shape says "river", colour says status.
-  function initMap(gwFeats, flowFeats) {
+  // Resolve a clicked river (OS Open Rivers line name) to its hub slug via the
+  // rivers index — collision-aware (two same-named rivers pick the nearest to
+  // the click), and tolerant of the OS name adding/dropping the "River "
+  // prefix vs the catalogue name.
+  function hubForRiver(name, lng, lat, index) {
+    if (!index || !index.length) return null;
+    var t = slug(name);
+    var alt = /^river /i.test(name) ? slug(name.replace(/^river /i, "")) : slug("river " + name);
+    var m = index.filter(function (r) {
+      var rs = slug(r.name);
+      return rs === t || rs === alt || slug(r.name.replace(/^river /i, "")) === t;
+    });
+    if (!m.length) return null;
+    if (m.length === 1) return m[0].slug;
+    var best = m[0], bd = Infinity;
+    m.forEach(function (r) {
+      var dx = r.lon - lng, dy = r.lat - lat, d = dx * dx + dy * dy;
+      if (d < bd) { bd = d; best = r; }
+    });
+    return best.slug;
+  }
+
+  function initMap(gwFeats, flowFeats, riversGeo, riversIndex) {
     var host = document.getElementById("hero-map-gl");
     if (!host || !window.maplibregl || !window.GWC_CONFIG) return;
     var CFG = window.GWC_CONFIG, PAL = CFG.palette;
@@ -37,9 +59,14 @@
       map = new maplibregl.Map({
         container: host, style: CFG.basemapStyle,
         center: CFG.center, zoom: 5.1,
-        interactive: false, attributionControl: false,
+        interactive: true, attributionControl: false,
       });
     } catch (e) { return; }
+    // A hero map, not the full explorer: allow click + drag to explore, but
+    // don't hijack page scroll (scrollZoom off) or rotate.
+    try { map.scrollZoom.disable(); map.dragRotate.disable();
+      map.touchZoomRotate.disableRotation(); } catch (e) {}
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
     // Start the (i) attribution collapsed over the snapshot — one tap expands
     // it (MapLibre's own map-click minimize does exactly this class removal),
@@ -104,8 +131,65 @@
           "icon-halo-color": "#1a3a5c", "icon-halo-width": 1.5,
         },
       });
+      // Clickable OS Open Rivers lines → the river's hub page (beneath the
+      // dots/diamonds so the markers stay on top and clickable).
+      if (riversGeo && riversGeo.features) {
+        map.addSource("rivers", { type: "geojson", data: riversGeo });
+        map.addLayer({
+          id: "rivers-lines", type: "line", source: "rivers",
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: {
+            "line-color": "#4a90c4",
+            "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.8, 9, 2.2, 12, 3.4],
+            "line-opacity": 0.72,
+          },
+        }, "bore-dots");
+        map.on("click", "rivers-lines", function (e) {
+          var f = e.features && e.features[0];
+          if (!f) return;
+          var s = hubForRiver(f.properties.name, e.lngLat.lng, e.lngLat.lat, riversIndex);
+          if (s) location.href = "/rivers/" + s + "/";
+        });
+        map.on("mouseenter", "rivers-lines", function () { map.getCanvas().style.cursor = "pointer"; });
+        map.on("mouseleave", "rivers-lines", function () { map.getCanvas().style.cursor = ""; });
+      }
+      // Clickable gauge diamonds → that gauge's forecast page.
+      map.on("click", "gauge-diamonds", function (e) {
+        var f = e.features && e.features[0];
+        if (!f) return;
+        var p = f.properties || {};
+        location.href = "/r/" + (p.slug || slug(p.name || p.station_id)) + "/";
+      });
+      map.on("mouseenter", "gauge-diamonds", function () { map.getCanvas().style.cursor = "pointer"; });
+      map.on("mouseleave", "gauge-diamonds", function () { map.getCanvas().style.cursor = ""; });
       map.fitBounds([[-6.3, 49.9], [1.8, 55.9]], { padding: 14, duration: 0 });
     });
+  }
+
+  // The "Browse rivers" directory — grouped by county, each river linking to
+  // its hub with a status dot. Rendered from rivers_index.json (crawl links
+  // to hubs also live on /browse + the sitemap).
+  function renderDirectory(index) {
+    var host = document.getElementById("rivers-dir");
+    if (!host || !index || !index.length) return;
+    var byReg = {};
+    index.forEach(function (r) {
+      (byReg[r.region || "Other"] = byReg[r.region || "Other"] || []).push(r);
+    });
+    var regions = Object.keys(byReg).sort();
+    host.innerHTML = regions.map(function (reg) {
+      var lis = byReg[reg].sort(function (a, b) {
+        return (a.name || "").localeCompare(b.name || "");
+      }).map(function (r) {
+        var cls = r.total && r.below > 0 ? "rv-below"
+          : r.total ? "rv-near" : "rv-nostat";
+        return '<li class="' + cls + '"><a href="/rivers/' + r.slug + '/">' +
+          '<span class="rv-d"></span>' + esc(r.name) + "</a></li>";
+      }).join("");
+      return '<div class="rv-dircol"><h4>' + esc(reg) + "</h4><ul>" + lis + "</ul></div>";
+    }).join("");
+    var sec = document.getElementById("rivers-dir-sec");
+    if (sec) sec.hidden = false;
   }
 
   function renderStat(counts, nFlow) {
@@ -200,7 +284,8 @@
     if (pool.length) picks.push(pool[0]);
     if (pool.length > 1) picks.push(pool[1]);
     if (pool.length > 2) picks.push(pool[pool.length - 1]);
-    if (!picks.length) { host.innerHTML = '<span class="loading">No current readings available.</span>'; return; }
+    if (!picks.length) { host.innerHTML = '<span class="loading">No current readings stand out today — ' +
+      '<a href="/explorer/#rivers=1">open the map</a>.</span>'; return; }
     host.innerHTML = picks.map(function (f) {
       var p = f.properties;
       return '<a class="card" href="' + gaugeHref(p) + '">' +
@@ -257,9 +342,25 @@
     strip.hidden = false;
   }
 
-  fetch(PACK + "/stations.geojson")
-    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-    .then(function (gj) {
+  function softFetch(url) {
+    return fetch(url).then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; });
+  }
+  // The browse-by-county directory is static SEO content built from
+  // rivers_index.json alone — render it independently so it survives even when
+  // the live pack (stations.geojson) is briefly unavailable. The same promise
+  // is reused below for the map's collision-aware click routing (no re-fetch).
+  var riversIndexP = softFetch("/rivers_index.json");
+  riversIndexP.then(function (idx) { renderDirectory(idx); });
+
+  Promise.all([
+    fetch(PACK + "/stations.geojson")
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }),
+    softFetch(PACK + "/rivers.geojson"),   // river polylines (optional)
+    riversIndexP,                          // river → hub directory (optional)
+  ])
+    .then(function (res) {
+      var gj = res[0], riversGeo = res[1], riversIndex = res[2];
       var feats = (gj && gj.features) || [];
       var flowFeats = feats.filter(function (f) {
         return ((f.properties || {}).station_type) === "flow";
@@ -273,14 +374,14 @@
         if (p.status && counts[p.status] != null) counts[p.status]++;
       }
       renderStat(counts, flowFeats.length);
-      initMap(gwFeats, flowFeats);
+      initMap(gwFeats, flowFeats, riversGeo, riversIndex);
       renderNotable(flowFeats);
       renderWinterbournes(flowFeats);
       renderQ95AndTrend();
       var lab = document.getElementById("hero-map-lab");
       if (lab) {
         lab.textContent = flowFeats.length.toLocaleString() +
-          " river gauges with a daily low-flow forecast · click to open the interactive map.";
+          " river gauges · click a river or gauge to open its page.";
       }
     })
     .catch(function () {

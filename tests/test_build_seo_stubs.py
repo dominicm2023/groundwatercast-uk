@@ -124,15 +124,26 @@ def test_build_smoke(tmp_path):
     assert "Browse boreholes" in browse and "/b/wilgate-green/" in browse
     assert "Rivers &amp; flow gauges" in browse
     assert "/r/chalkbourne-gauge/" in browse
+    # /browse/ gained a breadcrumb, meta description, JSON-LD, one <main>, and an
+    # HONEST subhead (was "with a forecast page" for all — most have none).
+    assert 'class="bore-crumb"' in browse
+    assert '<meta name="description"' in browse and "application/ld+json" in browse
+    assert "monitored boreholes, by ceremonial county" in browse
+    assert "with a forecast page" not in browse
+    assert browse.count("<main>") == 1
     sm = (web / "sitemap.xml").read_text(encoding="utf-8")
     assert "<loc>https://groundwatercast.com/b/wilgate-green/</loc>" in sm
     assert "/b/empty-bh/" not in sm       # noindex page excluded from sitemap
     assert "<loc>https://groundwatercast.com/r/chalkbourne-gauge/</loc>" in sm
     assert "<loc>https://groundwatercast.com/rivers/</loc>" in sm
     assert "<loc>https://groundwatercast.com/rivers/river-chalkbourne/</loc>" in sm
-    # home + rivers + about + methods + contact + explorer + browse + valley
-    # + wilgate-green + chalkbourne-gauge + river-chalkbourne hub
-    assert stats["sitemap_urls"] == 11
+    # 8 top-level + wilgate-green + chalkbourne-gauge + river-chalkbourne hub
+    # + one /browse/<county>/ landing per distinct county (Kent, Hampshire, …)
+    assert stats["sitemap_urls"] >= 11
+    assert "<loc>https://groundwatercast.com/browse/kent/</loc>" in sm    # county page (wilgate → Kent)
+    county = (web / "browse" / "kent" / "index.html").read_text(encoding="utf-8")
+    assert "Kent — groundwater" in county and "/b/wilgate-green/" in county
+    assert 'href="/browse/kent/"' in browse                                # index links to it
 
     # the river hub: river-level page linking down to its gauge, ItemList JSON-LD,
     # and the gauge stub's breadcrumb climbs back up to it (crawlable pair).
@@ -154,8 +165,15 @@ def test_build_smoke(tmp_path):
     aged = json.loads(json.dumps(SAMPLE))
     aged["status"]["obs_age_days"] = 48        # five days later, no new reading
     (pack / "a.json").write_text(json.dumps(aged), encoding="utf-8")
+    # a stale stub dir the current pack no longer produces (renamed/retired
+    # station) must be pruned on the next build — not left live + indexable.
+    stale = out / "gone-station"
+    stale.mkdir(parents=True, exist_ok=True)
+    (stale / "index.html").write_text("stale duplicate", encoding="utf-8")
     B.build(pack, out, today="2026-07-05", lastmod_store=store,
             og_manifest=tmp_path / "no-cards.json")
+    assert not stale.exists()                       # pruned
+    assert (out / "wilgate-green").exists()          # current stub kept
     sm2 = (web / "sitemap.xml").read_text(encoding="utf-8")
     assert "<lastmod>2026-06-30</lastmod>" in sm2   # carried forward, not bumped to 07-05
 
@@ -252,20 +270,34 @@ def test_river_hub_page_multi_gauge_and_valley_and_boreholes():
         {"slug": "chilbolton-main", "name": "Chilbolton Main",
          "title": "River Test at Chilbolton Main",
          "status": {"status": "below", "percentile": 8.0}, "winterbourne": False,
-         "lat": 51.15, "lon": -1.44},
+         "lat": 51.15, "lon": -1.44, "series": [["a", 3.1], ["b", 2.9], ["c", 2.7]],
+         "q95": 1.98, "p_below": 0.42, "latest": 2.7},
         {"slug": "chilbolton-total", "name": "Chilbolton Total",
          "title": "River Test at Chilbolton Total",
          "status": {"status": "near", "percentile": 45.0}, "winterbourne": False,
-         "lat": 51.15, "lon": -1.44},
+         "lat": 51.15, "lon": -1.44, "series": [], "q95": 2.0, "p_below": 0.02, "latest": 3.0},
     ]
-    html = B._river_hub_page("River Test", "Hampshire", "river-test", gauges,
-                             [("test-bh", "Test Borehole")])
+    bores = [{"slug": "test-bh", "name": "Test Borehole",
+              "lat": 51.16, "lon": -1.45, "status": "above"}]
+    segs = [[[-1.50, 51.20], [-1.45, 51.15], [-1.40, 51.02]]]
+    html = B._river_hub_page("River Test", "Hampshire", "river-test", gauges, bores, segs)
     assert f'<link rel="canonical" href="{B.SITE}/rivers/river-test/">' in html
     assert "/r/chilbolton-main/" in html and "/r/chilbolton-total/" in html
-    assert "2 gauges" in html
     assert "/valley/test/" in html                       # Test is a valley river, in bbox
     assert "/b/test-bh/" in html                         # feeding-borehole link is crawlable
-    assert "<b>1</b> of the 2 gauges" in html            # today-summary (1 below)
+    assert "<svg" in html                                # baked static river map (no-JS fallback)
+    assert 'href="/rivers.css"' in html                  # chalk-stream stylesheet loaded
+    assert "1 of 2 gauges" in html                       # today-summary (1 below)
+    # interactive mini-map is progressive-enhancement over the baked SVG
+    assert 'id="rv-hubmap"' in html and 'id="rv-mapfallback"' in html
+    assert '/vendor/maplibre-gl.css' in html and "/rivers-hub.js" in html
+    import re as _re
+    m = _re.search(r"window\.RV_HUB=(\{.*?\})</script>", html)
+    assert m, "no RV_HUB geometry blob"
+    blob = json.loads(m.group(1))
+    assert blob["segs"] and blob["bounds"]               # river line + fit bbox present
+    assert {g["slug"] for g in blob["gauges"]} == {"chilbolton-main", "chilbolton-total"}
+    assert blob["boreholes"][0]["slug"] == "test-bh"     # feeding borehole in the blob
     from scripts.seo_common import pct_str
     assert pct_str(0.995) == ">99%"     # honesty ceiling — never "100%"
     assert pct_str(0.003) == "<1%"      # honesty floor — never "0%"
@@ -273,3 +305,46 @@ def test_river_hub_page_multi_gauge_and_valley_and_boreholes():
     assert pct_str(None) is None
     html = B._page(SAMPLE, "wilgate-green", "Kent", True)
     assert "&lt;1%" in html             # SAMPLE p_breach_14d=0.0 → floored
+
+
+def _desc(html):
+    return re.search(r'<meta name="description" content="([^"]*)"', html).group(1)
+
+
+def test_borehole_description_gated_on_forecast_and_unique():
+    # SAMPLE carries a forecast → the 14-day claim is allowed.
+    assert "Experimental 14-day open-data outlook" in _desc(B._head(SAMPLE, "wilgate-green", "Kent", True))
+    # No forecast (most boreholes) → no "14-day outlook" overclaim, and the last
+    # observed reading is baked in so the description isn't boilerplate-identical.
+    no_fc = json.loads(json.dumps(SAMPLE))
+    no_fc["forecast"] = None
+    m = _desc(B._head(no_fc, "wilgate-green", "Kent", True))
+    assert "14-day" not in m
+    assert "Daily open-data groundwater monitoring" in m
+    assert "Last reading 40.60 mAOD on 2026-05-09" in m
+
+
+def test_main_landmark_present_on_stub_templates():
+    assert B._page(SAMPLE, "wilgate-green", "Kent", True).count("<main>") == 1
+    assert "</main>" in B._page(SAMPLE, "wilgate-green", "Kent", True)
+    assert B._flow_page(FLOW_SAMPLE, "chilbolton-main", "Hampshire", True).count("<main>") == 1
+
+
+def test_flow_page_has_og_image_fallback():
+    h = B._flow_head(FLOW_SAMPLE, "chilbolton-main", "Hampshire", True)
+    assert f"{B.SITE}/og/default.png" in h
+    assert "og:image" in h and "twitter:image" in h
+    assert "summary_large_image" in h
+
+
+def test_reciprocal_feeds_link():
+    feeds = [{"river": "River Test", "hub_url": "/rivers/river-test/"}]
+    html = B._page(SAMPLE, "wilgate-green", "Kent", True, feeds=feeds)
+    assert 'class="bore-feeds"' in html
+    assert '<a href="/rivers/river-test/">River Test</a>' in html
+    assert "bore-feeds" not in B._page(SAMPLE, "wilgate-green", "Kent", True)   # none → no line
+
+
+def test_borehole_title_disambiguation():
+    html = B._page(SAMPLE, "wilgate-green", "Kent", True, title_extra=" (EA 01e2532a)")
+    assert "(EA 01e2532a) — indicative forecast" in html

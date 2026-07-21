@@ -508,11 +508,108 @@
     const search = document.getElementById("search");
     const seg = document.getElementById("view-mode");
     const countEl = document.getElementById("view-count");
+    const resultsList = document.getElementById("search-results");
 
     function syncSeg() {
-      seg.querySelectorAll(".seg").forEach(
-        (b) => b.classList.toggle("active", b.dataset.mode === state.view));
+      seg.querySelectorAll(".seg").forEach((b) => {
+        const on = b.dataset.mode === state.view;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-pressed", String(on));
+      });
     }
+
+    // -- keyboard-accessible search results (a11y: the map dots are only
+    // reachable with a mouse, since MapLibre draws them on a canvas with no
+    // native DOM/keyboard hit-targets. This list is the keyboard path: typing
+    // renders up to 15 matches as a focusable listbox under the search box,
+    // and Enter/click on a result calls the SAME selectFeature() the map
+    // click handler uses, so both paths open the identical detail panel. --
+    let searchResults = [];   // features currently listed (mirrors what's shown)
+    let activeIdx = -1;       // aria-activedescendant index, -1 = none highlighted
+
+    function hideResults() {
+      if (!resultsList) return;
+      resultsList.hidden = true;
+      resultsList.innerHTML = "";
+      searchResults = [];
+      activeIdx = -1;
+      search.setAttribute("aria-expanded", "false");
+      search.removeAttribute("aria-activedescendant");
+    }
+    function highlightActive() {
+      if (!resultsList) return;
+      Array.prototype.forEach.call(resultsList.children, (li, i) => {
+        li.classList.toggle("active", i === activeIdx);
+      });
+      if (activeIdx >= 0) {
+        search.setAttribute("aria-activedescendant", "search-result-" + activeIdx);
+        const el = resultsList.children[activeIdx];
+        if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
+      } else {
+        search.removeAttribute("aria-activedescendant");
+      }
+    }
+    function chooseResult(i) {
+      const f = searchResults[i];
+      if (!f) return;
+      // every listed result already passed visibleUnderView() for the current
+      // view mode (same filter the map dots use), so no view-mode switch is
+      // needed here — unlike the hash-restore path, which can target a
+      // borehole hidden by the CURRENT view and has to flip to "all" first.
+      selectFeature(f, { flyTo: true, focus: true });
+      search.value = "";
+      hideResults();
+      apply();      // resync the map's dot filter now the query text is cleared
+    }
+    function renderResults(feats, q) {
+      if (!resultsList) return;
+      searchResults = q ? feats.slice(0, 15) : [];
+      activeIdx = -1;
+      if (!searchResults.length) { hideResults(); return; }
+      resultsList.innerHTML = searchResults.map((f, i) => {
+        const p = f.properties;
+        const kind = p.station_type === "flow" ? "RiverCast"
+          : (p.has_forecast ? "forecast" : "status");
+        return `<li role="option" id="search-result-${i}" class="search-result" tabindex="-1">` +
+          `<span>${escapeHtml(p.name || p.station_id)}</span>` +
+          `<span class="sr-kind">${kind}</span></li>`;
+      }).join("");
+      resultsList.hidden = false;
+      search.setAttribute("aria-expanded", "true");
+    }
+    // mousedown (not click) fires before the input would blur, so
+    // preventDefault here keeps focus in the input and the list open long
+    // enough for the click to land — same interaction model as a native
+    // <select>/combobox popup.
+    if (resultsList) {
+      resultsList.addEventListener("mousedown", (e) => {
+        const li = e.target.closest(".search-result");
+        if (!li) return;
+        e.preventDefault();
+        chooseResult(parseInt(li.id.replace("search-result-", ""), 10));
+      });
+    }
+    search.addEventListener("keydown", (e) => {
+      if (!searchResults.length) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        activeIdx = Math.min(activeIdx + 1, searchResults.length - 1);
+        highlightActive();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        activeIdx = Math.max(activeIdx - 1, 0);
+        highlightActive();
+      } else if (e.key === "Enter") {
+        if (activeIdx >= 0) { e.preventDefault(); chooseResult(activeIdx); }
+      } else if (e.key === "Escape") {
+        hideResults();
+      }
+    });
+    // blur closes the list; mousedown above prevents a genuine blur when the
+    // user is actually clicking a result, so this only fires for real
+    // focus-away (tab out, click the map, etc).
+    search.addEventListener("blur", () => hideResults());
+
     function apply() {
       const q = search.value.trim().toLowerCase();
       const feats = geojson.features.filter((f) =>
@@ -520,6 +617,7 @@
         && visibleUnderView(f.properties, state.view));
       map.getSource("stations").setData({ type: "FeatureCollection", features: feats });
       countEl.textContent = `showing ${feats.length} of ${geojson.features.length}`;
+      renderResults(feats, q);
     }
     search.addEventListener("input", debounce(apply, 180));
     seg.addEventListener("click", (e) => {

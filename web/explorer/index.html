@@ -17,6 +17,25 @@
   <meta name="theme-color" content="#1a3a5c" />
   <link rel="stylesheet" href="/vendor/maplibre-gl.css" />
   <link rel="stylesheet" href="/style.css" />
+  <style>
+    /* Fix 2/3 a11y patch — kept inline: explorer/index.html and app.js are the
+       only files in scope for this change, so these small rules live here
+       rather than in /style.css. They only style the new keyboard-searchable
+       results list and the explorer footer. */
+    .search-wrap { position: relative; }
+    .search-results { position: absolute; left: 0; right: 0; top: 100%;
+      margin: 4px 0 0; padding: 4px 0; list-style: none; max-height: 240px;
+      overflow-y: auto; background: #fff; border: 1px solid var(--line);
+      border-radius: 6px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16); z-index: 8; }
+    .search-result { padding: 6px 10px; font-size: 0.82rem; cursor: pointer;
+      display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .search-result .sr-kind { font-size: 0.68rem; color: var(--muted); white-space: nowrap; }
+    .search-result:hover, .search-result.active { background: var(--bg); }
+    #explorer-foot { flex: 0 0 auto; padding: 8px 16px 10px; background: var(--panel);
+      border-top: 1px solid var(--line); }
+    #explorer-foot p { margin: 0 0 4px; }
+    #explorer-foot p:last-child { margin-bottom: 0; }
+  </style>
 </head>
 <body>
   <div id="run-banner" class="run-banner" role="alert" hidden></div>
@@ -33,8 +52,8 @@
       <span id="data-asof" class="asof">loading…</span>
       <a class="about-link" href="/rivers/">Rivers</a>
       <a class="about-link" href="/browse/">Browse</a>
+      <a class="about-link" href="/about/" id="about-toggle">About</a>
       <a class="about-link methods-link" href="/methods/">Methods</a>
-      <a class="about-link" href="#" id="about-toggle">About</a>
     </div>
   </header>
 
@@ -44,12 +63,19 @@
 
       <div id="left-rail">
       <div id="controls">
-        <input id="search" type="search" placeholder="Search borehole name…"
-               autocomplete="off" spellcheck="false" />
+        <div class="search-wrap">
+          <input id="search" type="search" placeholder="Search borehole name…"
+                 autocomplete="off" spellcheck="false"
+                 aria-label="Search boreholes and gauges"
+                 role="combobox" aria-expanded="false" aria-controls="search-results"
+                 aria-autocomplete="list" />
+          <ul id="search-results" class="search-results" role="listbox"
+              aria-label="Search results" hidden></ul>
+        </div>
         <div class="segmented" id="view-mode" role="group" aria-label="Map view">
-          <button class="seg active" data-mode="active" title="Boreholes with a current status and/or a forecast">Active</button>
-          <button class="seg" data-mode="forecast" title="Boreholes with a 14-day forecast">Forecast</button>
-          <button class="seg" data-mode="all" title="Every monitored borehole">All</button>
+          <button class="seg active" data-mode="active" aria-pressed="true" title="Boreholes with a current status and/or a forecast">Active</button>
+          <button class="seg" data-mode="forecast" aria-pressed="false" title="Boreholes with a 14-day forecast">Forecast</button>
+          <button class="seg" data-mode="all" aria-pressed="false" title="Every monitored borehole">All</button>
         </div>
         <div id="view-count" class="view-count"></div>
         <div id="timeline" class="timeline" hidden>
@@ -114,6 +140,16 @@
       <div id="detail-body" hidden></div>
     </aside>
   </main>
+
+  <footer id="explorer-foot">
+    <p class="disclaimer"><b>Indicative, uncalibrated research forecast.</b> Not a
+      flood or drought warning; not for safety-critical use. England only.
+      Independent open-source project &mdash; not affiliated with or endorsed by
+      any employer, the Environment Agency, ECMWF, or any water company.</p>
+    <p class="caption">Contains EA data (OGL v3) &middot; ECMWF Open Data (CC-BY-4.0) &middot;
+      Copernicus ERA5/SEAS5 &middot; BGS 625k geology (OGL) &middot; Free &amp; open source (MIT) &middot;
+      <a href="/methods/">Methods</a> &middot; <a href="/contact/">Contact</a>.</p>
+  </footer>
 
   <div id="about" hidden>
     <div class="about-card">

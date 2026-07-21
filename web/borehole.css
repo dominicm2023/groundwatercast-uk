@@ -100,6 +100,11 @@ body { background: var(--bg); display: block; }
      un-draggable on touch screens) */
   background: linear-gradient(90deg, #cfe0ef, var(--above)) center / 100% 5px no-repeat;
 }
+/* keyboard focus indicator (this is a real <input type="range">) — outline:none
+   above removes the UA default, so restore a visible ring for :focus-visible */
+.fan-scrub:focus-visible {
+  outline: 2px solid var(--ink); outline-offset: 2px;
+}
 .fan-scrub::-webkit-slider-thumb {
   -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
   background: #fff; border: 2px solid var(--above); box-shadow: 0 1px 4px rgba(26, 58, 92, 0.3); cursor: grab;

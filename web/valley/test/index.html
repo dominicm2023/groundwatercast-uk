@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-GB">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,6 +7,11 @@
 <meta name="description" content="A 3-D model of the River Test valley, source to sea: replay three years of measured rain, groundwater and river flow, watch the winterbournes advance and retreat, then walk the forecast six months ahead.">
 <link rel="canonical" href="https://groundwatercast.com/valley/test/">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[
+  {"@type":"WebPage","@id":"https://groundwatercast.com/valley/test/#webpage","url":"https://groundwatercast.com/valley/test/","name":"The River Test in 3-D — a living chalk aquifer","isPartOf":{"@id":"https://groundwatercast.com/#website"},"inLanguage":"en-GB","description":"A 3-D model of the River Test valley, source to sea: replay three years of measured rain, groundwater and river flow, watch the winterbournes advance and retreat, then walk the forecast six months ahead."}
+]}
+</script>
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="GroundwaterCast UK">
 <meta property="og:title" content="The River Test in 3-D — a living chalk aquifer">
@@ -24,7 +29,18 @@
   .panel { position: fixed; background: rgba(10, 17, 30, 0.78);
     border: 1px solid rgba(160, 190, 230, 0.18); border-radius: 12px;
     padding: 12px 16px; backdrop-filter: blur(6px); }
-  #title { top: 14px; left: 14px; max-width: 340px; }
+  /* SITE NAV — persistent way back into the rest of the site; sits above
+     #title in the same top-left corner (canonical fix for the nav dead-end:
+     this page previously had no header/footer/links at all). */
+  #site-nav { top: 14px; left: 14px; z-index: 20; display: flex;
+    align-items: center; gap: 10px; padding: 8px 14px; font-size: 12.5px; }
+  #site-nav a { color: #b9c8de; text-decoration: none; font-weight: 600;
+    white-space: nowrap; }
+  #site-nav a:first-child { color: #eaf4ff; }
+  #site-nav a:hover, #site-nav a:focus-visible { color: #8fd0ff;
+    text-decoration: underline; }
+  #site-nav .sep { color: rgba(160, 190, 230, 0.35); }
+  #title { top: 62px; left: 14px; max-width: 340px; z-index: 10; }
   #title h1 { margin: 0 0 2px; font-size: 17px; font-weight: 650; letter-spacing: 0.2px; }
   #title p { margin: 0; font-size: 12px; color: #9fb2cc; }
   #controls { left: 14px; bottom: 96px; width: 330px; }
@@ -114,6 +130,7 @@
   #loader .ld-sub { font-size: 11.5px; color: #8fa3bd; max-width: 300px;
     text-align: center; line-height: 1.5; }
   @media (max-width: 640px) {
+    #site-nav { gap: 7px; padding: 6px 10px; font-size: 11px; }
     #title { max-width: 240px; } #title p { display: none; }
     #controls { width: calc(100vw - 60px); padding: 8px 12px; bottom: 88px; }
     /* the legend is reference furniture — on a phone the tap cards carry the
@@ -133,6 +150,14 @@
     about 6&nbsp;MB of open data. Worth the wait.</div>
 </div>
 <canvas id="scene"></canvas>
+
+<nav class="panel" id="site-nav" aria-label="GroundwaterCast site navigation">
+  <a href="/">GroundwaterCast</a>
+  <span class="sep" aria-hidden="true">·</span>
+  <a href="/rivers/">Rivers</a>
+  <span class="sep" aria-hidden="true">·</span>
+  <a href="/explorer/">Explorer</a>
+</nav>
 
 <div class="panel" id="title">
   <h1>The River Test, beneath the valley</h1>
@@ -216,7 +241,9 @@
   indicative, not a measurement; drift motes show the downgradient direction
   of that interpolated surface, not measured flow. Below the tidal limit at
   Redbridge the water is tidal — drawn for completeness, not modelled. Not a
-  flood or drought warning.</span>
+  flood or drought warning. England only. Independent open-source project —
+  not affiliated with or endorsed by any employer, the Environment Agency,
+  ECMWF, or any water company.</span>
 </div>
 
 <script src="vendor/three.global.min.js"></script>

@@ -1,0 +1,208 @@
+/* GroundwaterCast — RiverCast hub + landing chalk-stream treatment.
+   Self-contained --rv-* tokens (no reliance on / override of the site's other
+   stylesheets); rv- prefixed classes so nothing collides with home/borehole
+   /style.css. Loaded ALONGSIDE the page's base stylesheet. Both themes. */
+:root{
+  --rv-paper:#f3f6f6; --rv-card:#ffffff; --rv-card2:#fbfcfc;
+  --rv-ink:#16324e; --rv-ink-soft:#41566c; --rv-muted:#6a7d8c;
+  --rv-line:#e3e9ea; --rv-line-strong:#d2dadc;
+  --rv-river:#3f83ad; --rv-river-deep:#2c6389; --rv-river-sheen:#8fc4e0;
+  --rv-chalk:#edf0ec;
+  --rv-below:#d4a017; --rv-near:#8a8a8a; --rv-above:#1f77b4; --rv-none:#cdd4d6;
+  --rv-winter:#5c8a4a;
+  /* Contrast-safe .rv-chip fills only (dots/lines/pills keep the lighter hues
+     above — see .rv-chip.rv-* overrides below). Same values as style.css'
+     --chip-*, verified WHITE-on ~5.3-7.3:1 in both themes (fixed hex, not
+     theme-dependent). */
+  --rv-chip-below:#8a5c00; --rv-chip-near:#5f5f5f; --rv-chip-none:#6b6b6b;
+  --rv-shadow:0 1px 2px rgba(22,50,78,.06),0 8px 26px rgba(22,50,78,.08);
+  --rv-lift:0 2px 6px rgba(22,50,78,.10),0 18px 44px rgba(22,50,78,.14);
+  --rv-serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --rv-paper:#0d1720; --rv-card:#14232e; --rv-card2:#101d27;
+    --rv-ink:#e7eef4; --rv-ink-soft:#b7c6d2; --rv-muted:#8397a6;
+    --rv-line:#20323f; --rv-line-strong:#2a3f4d;
+    --rv-river:#5aa0c6; --rv-river-deep:#3f83ad; --rv-river-sheen:#bfe0f0;
+    --rv-chalk:#122029; --rv-none:#33454f;
+    --rv-shadow:0 1px 2px rgba(0,0,0,.3),0 8px 26px rgba(0,0,0,.4);
+    --rv-lift:0 2px 6px rgba(0,0,0,.4),0 18px 44px rgba(0,0,0,.5);
+  }
+}
+:root[data-theme="dark"]{
+  --rv-paper:#0d1720; --rv-card:#14232e; --rv-card2:#101d27; --rv-ink:#e7eef4;
+  --rv-ink-soft:#b7c6d2; --rv-muted:#8397a6; --rv-line:#20323f;
+  --rv-line-strong:#2a3f4d; --rv-river:#5aa0c6; --rv-river-deep:#3f83ad;
+  --rv-river-sheen:#bfe0f0; --rv-chalk:#122029; --rv-none:#33454f;
+  --rv-shadow:0 1px 2px rgba(0,0,0,.3),0 8px 26px rgba(0,0,0,.4);
+  --rv-lift:0 2px 6px rgba(0,0,0,.4),0 18px 44px rgba(0,0,0,.5);
+}
+:root[data-theme="light"]{
+  --rv-paper:#f3f6f6; --rv-card:#ffffff; --rv-card2:#fbfcfc; --rv-ink:#16324e;
+  --rv-ink-soft:#41566c; --rv-muted:#6a7d8c; --rv-line:#e3e9ea;
+  --rv-line-strong:#d2dadc; --rv-river:#3f83ad; --rv-river-deep:#2c6389;
+  --rv-river-sheen:#8fc4e0; --rv-chalk:#edf0ec; --rv-none:#cdd4d6;
+  --rv-shadow:0 1px 2px rgba(22,50,78,.06),0 8px 26px rgba(22,50,78,.08);
+  --rv-lift:0 2px 6px rgba(22,50,78,.10),0 18px 44px rgba(22,50,78,.14);
+}
+
+/* status → colour (semantic, not accent) */
+.rv-below{--rv-s:var(--rv-below)} .rv-near{--rv-s:var(--rv-near)}
+.rv-above{--rv-s:var(--rv-above)} .rv-nostat{--rv-s:var(--rv-none)}
+/* .rv-chip carries WHITE text — override --rv-s with the darker chip-only
+   tokens (higher specificity than the rules above) so the badge itself
+   clears 4.5:1; dots/lines/pills using the plain .rv-below/.rv-near/
+   .rv-nostat classes elsewhere are unaffected. .rv-above is already ≥4.5:1
+   (~4.8:1) so it's left on --rv-above. */
+.rv-chip.rv-below{--rv-s:var(--rv-chip-below)}
+.rv-chip.rv-near{--rv-s:var(--rv-chip-near)}
+.rv-chip.rv-nostat{--rv-s:var(--rv-chip-none)}
+
+.rv-wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+.rv-eyebrow{text-transform:uppercase;letter-spacing:.14em;font-size:.7rem;
+  font-weight:700;color:var(--rv-river-deep)}
+.rv-num{font-variant-numeric:tabular-nums}
+.rv-h1,.rv-h2,.rv-h3{font-family:var(--rv-serif);color:var(--rv-ink);
+  font-weight:600;letter-spacing:-.01em;text-wrap:balance;margin:0}
+
+/* ---- breadcrumb ---- */
+.rv-crumb{font-size:.8rem;color:var(--rv-muted);padding:16px 0 2px}
+.rv-crumb a{color:var(--rv-muted)} .rv-crumb b{color:var(--rv-ink-soft)}
+
+/* ---- hero ---- */
+.rv-hero{display:grid;grid-template-columns:1.12fr .88fr;gap:40px;align-items:center;
+  padding:12px 0 36px}
+.rv-hero .rv-h1{font-size:clamp(2.4rem,5.5vw,3.7rem);line-height:1;margin:.1em 0 .16em}
+.rv-lede{font-size:1.1rem;color:var(--rv-ink-soft);max-width:34ch;margin:0 0 20px}
+.rv-facts{display:flex;flex-wrap:wrap;gap:8px 26px;margin:0 0 20px;padding:0;
+  list-style:none;font-size:.86rem;color:var(--rv-muted)}
+.rv-facts li{display:flex;flex-direction:column}
+.rv-facts b{font-family:var(--rv-serif);font-size:1.24rem;color:var(--rv-ink);font-weight:600}
+.rv-pill{display:inline-flex;align-items:center;gap:9px;background:var(--rv-card);
+  border:1px solid var(--rv-line);border-radius:999px;padding:8px 16px 8px 12px;
+  box-shadow:var(--rv-shadow);font-size:.94rem;color:var(--rv-ink-soft)}
+.rv-pill .rv-dot{width:11px;height:11px;border-radius:50%;flex:0 0 auto;background:var(--rv-s)}
+.rv-pill b{color:var(--rv-ink)}
+.rv-subline{font-size:.82rem;color:var(--rv-muted);margin:10px 0 0}
+
+/* ---- the river map ---- */
+.rv-map{position:relative;background:var(--rv-chalk);border:1px solid var(--rv-line);
+  border-radius:18px;box-shadow:var(--rv-lift);overflow:hidden;margin:0}
+.rv-map::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:1;
+  background:repeating-linear-gradient(0deg,transparent 0 26px,
+    color-mix(in srgb,var(--rv-ink) 5%,transparent) 26px 27px);opacity:.5}
+.rv-map.rv-mapready::before{opacity:0}          /* real basemap up → drop the paper hatch */
+.rv-map #rv-mapfallback{display:flex;align-items:center;justify-content:center}
+.rv-map #rv-mapfallback svg{position:relative;width:100%;height:100%;display:block}
+/* interactive mini-map: fills the figure, SVG fallback sits behind until it loads */
+.rv-glmap{position:relative;z-index:2;width:100%;height:clamp(320px,46vh,540px)}
+.rv-map #rv-mapfallback{position:absolute;inset:0;z-index:0}
+.rv-map .maplibregl-ctrl-attrib{font-size:.62rem}
+.rv-map .rv-mapcap{position:absolute;left:50%;transform:translateX(-50%);bottom:10px;
+  z-index:3;font-size:.71rem;color:var(--rv-muted);text-align:center;pointer-events:none;
+  background:color-mix(in srgb,var(--rv-chalk) 84%,transparent);padding:3px 10px;
+  border-radius:9px;max-width:88%}
+.rv-river-line{fill:none;stroke:var(--rv-river);stroke-linecap:round;stroke-linejoin:round}
+.rv-river-case{fill:none;stroke:var(--rv-river);stroke-opacity:.18;stroke-linecap:round;
+  stroke-linejoin:round}
+.rv-river-sheen{fill:none;stroke:var(--rv-river-sheen);stroke-opacity:.85;
+  stroke-dasharray:5 35;stroke-linecap:round;animation:rv-drift 5.5s linear infinite}
+.rv-mlabel{font-size:8.5px;fill:var(--rv-muted);font-weight:600;letter-spacing:.02em}
+.rv-mplace{font-family:var(--rv-serif);font-size:11px;fill:var(--rv-ink-soft);font-style:italic}
+.rv-map a{cursor:pointer}
+.rv-map a:hover .rv-gm,.rv-map a:hover .rv-bm{filter:brightness(1.08)}
+
+/* ---- section frame ---- */
+.rv-band{padding:32px 0;border-top:1px solid var(--rv-line)}
+.rv-sechead{margin-bottom:18px}
+.rv-sechead .rv-h2{font-size:1.65rem;margin-top:4px}
+.rv-sechead p{color:var(--rv-muted);margin:6px 0 0;max-width:60ch}
+
+/* ---- ribbon ---- */
+.rv-ribbon{background:var(--rv-card);border:1px solid var(--rv-line);border-radius:14px;
+  padding:20px 24px 12px;box-shadow:var(--rv-shadow)}
+.rv-ribbon svg{width:100%;height:96px;display:block;overflow:visible}
+.rv-ribbon .rv-ends{display:flex;justify-content:space-between;font-size:.74rem;
+  color:var(--rv-muted);margin-top:4px}
+
+/* ---- gauge cards ---- */
+.rv-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(258px,1fr));gap:16px}
+.rv-gcard{background:var(--rv-card);border:1px solid var(--rv-line);border-radius:14px;
+  padding:17px;box-shadow:var(--rv-shadow);display:block;color:var(--rv-ink);
+  transition:transform .12s,box-shadow .12s,border-color .12s}
+.rv-gcard:hover{transform:translateY(-2px);box-shadow:var(--rv-lift);
+  border-color:var(--rv-line-strong);text-decoration:none}
+.rv-gcard .rv-r1{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.rv-gname{font-family:var(--rv-serif);font-size:1.18rem;color:var(--rv-ink)}
+.rv-gsite{font-size:.8rem;color:var(--rv-muted);margin-top:2px}
+.rv-chip{display:inline-flex;align-items:center;gap:6px;font-size:.75rem;font-weight:600;
+  color:#fff;border-radius:999px;padding:3px 10px;white-space:nowrap;background:var(--rv-s)}
+.rv-chip .rv-pct{font-weight:400;opacity:.9}
+.rv-spark{margin:13px 0 11px;display:block}
+.rv-gstats{display:flex;gap:20px;font-size:.8rem;color:var(--rv-muted)}
+.rv-gstats b{display:block;font-family:var(--rv-serif);font-size:1.04rem;color:var(--rv-ink);
+  font-weight:600}
+
+/* ---- feeding aquifer ---- */
+.rv-aq{display:grid;grid-template-columns:repeat(auto-fill,minmax(212px,1fr));gap:12px}
+.rv-brow{display:flex;align-items:center;gap:11px;background:var(--rv-card2);
+  border:1px solid var(--rv-line);border-radius:11px;padding:11px 13px;font-size:.9rem;
+  color:var(--rv-ink)}
+.rv-brow:hover{border-color:var(--rv-line-strong);text-decoration:none}
+.rv-brow .rv-bdot{width:10px;height:10px;border-radius:50%;flex:0 0 auto;background:var(--rv-s)}
+.rv-brow .rv-bn{font-weight:500}
+.rv-brow .rv-bo{margin-left:auto;font-size:.73rem;color:var(--rv-muted);text-align:right}
+
+/* ---- winterbourne ---- */
+.rv-wbb{display:flex;gap:16px;align-items:flex-start;
+  background:color-mix(in srgb,var(--rv-winter) 8%,var(--rv-card));
+  border:1px solid color-mix(in srgb,var(--rv-winter) 26%,var(--rv-line));
+  border-radius:14px;padding:18px 20px}
+.rv-wbb .rv-ic{flex:0 0 auto;width:40px;height:40px;border-radius:11px;display:grid;
+  place-items:center;background:color-mix(in srgb,var(--rv-winter) 18%,var(--rv-card));font-size:20px}
+.rv-wbb .rv-h3{font-size:1.18rem;margin-bottom:4px}
+.rv-wbb p{margin:0;color:var(--rv-ink-soft);font-size:.92rem}
+
+/* ---- valley band ---- */
+.rv-valley{position:relative;border-radius:16px;overflow:hidden;color:#eaf2f7;
+  background:linear-gradient(120deg,#0f2a3f,#12405c 60%,#1d5c76);box-shadow:var(--rv-lift);
+  padding:28px;display:flex;justify-content:space-between;align-items:center;gap:20px}
+.rv-valley::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;
+  background:radial-gradient(140% 90% at 88% -10%,rgba(143,196,224,.5),transparent 60%)}
+.rv-valley>*{position:relative;z-index:2}
+.rv-valley .rv-h3{color:#fff;font-size:1.3rem}
+.rv-valley p{margin:6px 0 0;color:#bcd6e6;font-size:.9rem;max-width:46ch}
+.rv-valley .rv-go{flex:0 0 auto;background:rgba(255,255,255,.14);
+  border:1px solid rgba(255,255,255,.28);color:#fff;border-radius:11px;padding:12px 18px;
+  font-weight:600;font-size:.92rem;white-space:nowrap}
+.rv-valley .rv-go:hover{background:rgba(255,255,255,.22);text-decoration:none}
+
+/* ---- caveat ---- */
+.rv-caveat{font-size:.86rem;color:var(--rv-ink-soft);background:var(--rv-card2);
+  border:1px solid var(--rv-line);border-left:3px solid var(--rv-below);border-radius:10px;
+  padding:13px 16px}
+
+/* ---- landing: rivers directory ---- */
+.rv-dir{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px 22px}
+.rv-dircol h4{font-family:var(--rv-serif);font-size:1rem;color:var(--rv-ink);
+  margin:12px 0 6px;font-weight:600}
+.rv-dircol ul{list-style:none;margin:0;padding:0}
+.rv-dircol li{padding:2px 0}
+.rv-dircol a{display:inline-flex;align-items:center;gap:8px;font-size:.9rem;
+  color:var(--rv-ink-soft)}
+.rv-dircol a:hover{color:var(--rv-river-deep)}
+.rv-dircol .rv-d{width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:var(--rv-s)}
+
+.rv-hero-solo{grid-template-columns:1fr;max-width:640px}
+
+@media (max-width:820px){
+  .rv-hero{grid-template-columns:1fr;gap:24px}
+  .rv-map{max-width:420px;margin:0 auto;width:100%}
+  .rv-valley{flex-direction:column;align-items:flex-start}
+}
+@keyframes rv-drift{to{stroke-dashoffset:-40}}
+@media (prefers-reduced-motion:reduce){
+  .rv-river-sheen{animation:none}
+  .rv-gcard{transition:none}
+}
