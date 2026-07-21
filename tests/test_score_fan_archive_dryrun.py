@@ -1,6 +1,6 @@
 """Verification dry-run scorer: era split, coverage flags, pinball loss.
-Pure-function tests on synthetic rows; the first real archive run is
-summarised in the script docstring (full engine tracked in issue #1)."""
+Pure-function tests on synthetic rows; the real archive run is recorded in
+docs/phase3_verification_scope.md."""
 from __future__ import annotations
 
 import numpy as np

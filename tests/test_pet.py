@@ -141,3 +141,65 @@ def test_archive_daily_retries_on_429(monkeypatch):
     s = pet.et0_archive_daily(51.3, -1.5, date(2023, 1, 1), date(2023, 1, 1))
     assert calls["n"] == 3
     assert len(s) == 1
+
+
+# ---------------------------------------------------------------------------
+# resilience — the 2026-07-17 outage class (timeouts must not kill the chain)
+# ---------------------------------------------------------------------------
+
+def test_archive_daily_retries_transient_then_succeeds(monkeypatch):
+    calls = {"n": 0}
+
+    def flaky_get(*a, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise pet.requests.exceptions.ReadTimeout("read timed out")
+        return _FakeResp(_payload(date(2023, 1, 1), [0.4, 0.6]))
+
+    monkeypatch.setattr(pet.requests, "get", flaky_get)
+    monkeypatch.setattr(pet.time, "sleep", lambda s: None)
+    s = pet.et0_archive_daily(51.3, -1.5, date(2023, 1, 1), date(2023, 1, 2))
+    assert calls["n"] == 2 and len(s) == 2
+
+
+def test_archive_daily_raises_after_exhausted_retries(monkeypatch):
+    def dead_get(*a, **k):
+        raise pet.requests.exceptions.ConnectTimeout("handshake timed out")
+
+    monkeypatch.setattr(pet.requests, "get", dead_get)
+    monkeypatch.setattr(pet.time, "sleep", lambda s: None)
+    with pytest.raises(pet.requests.exceptions.ConnectTimeout):
+        pet.et0_archive_daily(51.3, -1.5, date(2023, 1, 1), date(2023, 1, 2))
+
+
+def test_fetch_serves_cached_tail_when_archive_down(monkeypatch, tmp_path):
+    # Seed the cache with 3 days, then ask for 5 with the archive dead: the
+    # cached tail comes back (2 days short), no exception — the flow chain's
+    # daily stage must degrade, not die.
+    ok_payload = _payload(date(2023, 1, 1), [0.5, 0.6, 0.7])
+    monkeypatch.setattr(pet.requests, "get", lambda *a, **k: _FakeResp(ok_payload))
+    monkeypatch.setattr(pet.time, "sleep", lambda s: None)
+    seeded = pet.fetch_station_pet("bh1", 51.3, -1.5,
+                                   date(2023, 1, 1), date(2023, 1, 3),
+                                   cache_root=tmp_path)
+    assert len(seeded) == 3
+
+    def dead_get(*a, **k):
+        raise pet.requests.exceptions.ReadTimeout("read timed out")
+    monkeypatch.setattr(pet.requests, "get", dead_get)
+    s = pet.fetch_station_pet("bh1", 51.3, -1.5,
+                              date(2023, 1, 1), date(2023, 1, 5),
+                              cache_root=tmp_path)
+    assert len(s) == 3                        # the cached days, tail short
+    assert s.index.max() == pd.Timestamp("2023-01-03")
+
+
+def test_fetch_raises_when_archive_down_and_no_cache(monkeypatch, tmp_path):
+    def dead_get(*a, **k):
+        raise pet.requests.exceptions.ReadTimeout("read timed out")
+    monkeypatch.setattr(pet.requests, "get", dead_get)
+    monkeypatch.setattr(pet.time, "sleep", lambda s: None)
+    with pytest.raises(pet.requests.exceptions.ReadTimeout):
+        pet.fetch_station_pet("fresh", 51.3, -1.5,
+                              date(2023, 1, 1), date(2023, 1, 5),
+                              cache_root=tmp_path)

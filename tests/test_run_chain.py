@@ -347,3 +347,63 @@ class TestLockWait:
         slept = []
         assert _acquire_lock_or_wait(0, sleep=slept.append, clock=lambda: 0.0) is False
         assert slept == []                          # exits immediately, old behaviour
+
+
+# ---------------------------------------------------------------------------
+# (f) flow stages are non-fatal — rivers cold must never make groundwater dark
+#     (2026-07-17 incident: 8h-flow died on an Open-Meteo timeout and the
+#     publish stages behind it were silently skipped)
+# ---------------------------------------------------------------------------
+
+FLOW_STAGE_NAMES = {"build_flow_shards", "build_flow_models",
+                    "build_flow_members", "build_flow_seasonal_shadow"}
+
+
+def test_flow_stages_are_nonfatal_everything_else_fatal():
+    for s in STAGES:
+        if s.name in FLOW_STAGE_NAMES:
+            assert not s.fatal, f"{s.name} must be non-fatal (RiverCast layer)"
+        else:
+            assert s.fatal, f"{s.name} must be fatal (core chain)"
+
+
+def test_publish_stage_is_fatal():
+    pack = next(s for s in STAGES if s.name == "build_artifact_pack")
+    assert pack.fatal
+
+
+def _run_main_with_fake_subprocess(monkeypatch, tmp_path, fail_stage):
+    """Drive main() with subprocess.run monkeypatched (nothing real spawned):
+    the stage named ``fail_stage`` exits 1, everything else exits 0. Returns
+    (exit_code, executed_stage_names)."""
+    import types
+
+    executed = []
+
+    def fake_run(cmd, cwd=None):
+        joined = " ".join(str(c) for c in cmd)
+        name = next((s.name for s in STAGES if s.argv[-1] in joined), None)
+        executed.append(name)
+        rc = 1 if name == fail_stage else 0
+        return types.SimpleNamespace(returncode=rc)
+
+    monkeypatch.setattr(RC.subprocess, "run", fake_run)
+    monkeypatch.setattr(RC, "LOCK_PATH", tmp_path / "run_chain.lock")
+    rc_code = RC.main(["--freshness"])
+    return rc_code, executed
+
+
+def test_nonfatal_failure_continues_and_reports(monkeypatch, tmp_path):
+    # --freshness includes build_flow_shards (non-fatal) followed by GW stages.
+    code, executed = _run_main_with_fake_subprocess(
+        monkeypatch, tmp_path, fail_stage="build_flow_shards")
+    assert code == 1                                   # failure still surfaced
+    i = executed.index("build_flow_shards")
+    assert len(executed) > i + 1, "stages after the non-fatal failure must run"
+
+
+def test_fatal_failure_still_halts(monkeypatch, tmp_path):
+    code, executed = _run_main_with_fake_subprocess(
+        monkeypatch, tmp_path, fail_stage="refresh_gw_tail")
+    assert code == 1
+    assert executed[-1] == "refresh_gw_tail", "chain must stop at a fatal failure"

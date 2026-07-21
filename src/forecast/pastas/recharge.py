@@ -26,6 +26,51 @@ import pandas as pd
 # level. Bounding it lets the predictive band widen toward the marginal sigma.
 _ALPHA_MAX_DAYS: float = 365.0
 
+# Day-1 band floor (2026-07-18, from the first verification dry-run). The AR1
+# conditional sd sigma*sqrt(1-exp(-2k/alpha)) is near-zero at k=1 for
+# long-memory stations (alpha ~ months), so the published day-1 band averaged
+# ~0.16 m wide and covered only 45-54% of observations vs the nominal 80%
+# (docs/phase3_verification_scope.md §First dry-run). Real levels carry daily
+# measurement/micro-event noise the long-memory AR1 cannot represent, so a
+# per-station noise floor is added in quadrature: robust (MAD-based) sd of
+# CONSECUTIVE-calendar-day changes over the recent window, scaled by
+# _NOISE_FLOOR_K and capped. Quadrature makes it self-fading — at lead 14
+# (sigma ~ 0.5 m) a 0.05 m floor adds <1% width. K=2.0 and the 0.10 m cap were
+# chosen on the 2026-07 archive A/B (lead-1 coverage 0.51→0.78 overall /
+# 0.82 current-era, leads 2+ +~1pp); one tuned scalar, disclosed — the winter
+# archive re-verifies it out-of-sample. GW models only: flow logQ daily diffs
+# encode real flashiness, not observation noise.
+_NOISE_FLOOR_WINDOW_DAYS: int = 90
+_NOISE_FLOOR_MIN_PAIRS: int = 10
+_NOISE_FLOOR_K: float = 2.0
+_NOISE_FLOOR_CAP_M: float = 0.10
+
+
+def daily_innovation_sigma(series: pd.Series, origin: pd.Timestamp,
+                           window_days: int = _NOISE_FLOOR_WINDOW_DAYS,
+                           min_pairs: int = _NOISE_FLOOR_MIN_PAIRS) -> float:
+    """Robust sd (m) of day-to-day level changes near ``origin``.
+
+    Gap-aware by construction: the series is laid on a daily calendar grid
+    first, so ``diff()`` only ever pairs consecutive calendar days — a dipped
+    or gappy record contributes only its genuinely-daily stretches, and a
+    station with fewer than ``min_pairs`` consecutive-day pairs in the window
+    returns 0.0 (no floor). MAD-based so a single telemetry spike doesn't
+    inflate the estimate."""
+    s = _norm(series).dropna()
+    if s.empty:
+        return 0.0
+    origin = pd.Timestamp(origin).tz_localize(None).normalize()
+    s = s[(s.index > origin - pd.Timedelta(days=window_days))
+          & (s.index <= origin)]
+    if s.empty:
+        return 0.0
+    s = s.groupby(s.index).mean()          # defend against duplicate dates
+    d = s.asfreq("D").diff().dropna()      # gap-spanning diffs become NaN
+    if len(d) < min_pairs:
+        return 0.0
+    return 1.4826 * float((d - d.median()).abs().median())
+
 
 def _safe_alpha(alpha) -> float:
     """Finite, positive AR1 decay in days, capped at ``_ALPHA_MAX_DAYS``.
@@ -296,7 +341,8 @@ def calibrate_flow(gauge_id: str, q: pd.Series, prec: pd.Series, evap: pd.Series
 
 def simulate_path(rec: ModelRec, head: pd.Series, prec: pd.Series,
                   evap: pd.Series, origin: pd.Timestamp,
-                  target_dates: pd.DatetimeIndex
+                  target_dates: pd.DatetimeIndex,
+                  noise_floor: bool = True
                   ) -> tuple[np.ndarray, np.ndarray]:
     """Forecast GW (or, for a ``model_kind="flow_2s"`` rec, logQ) at arbitrary
     ``target_dates``, seeded at the observed ``origin`` level via AR1
@@ -349,6 +395,15 @@ def simulate_path(rec: ModelRec, head: pd.Series, prec: pd.Series,
     # models → 1.0 → unchanged.
     infl = float(rec.get("sigma_inflation", 1.0) or 1.0)
     sig = infl * float(rec["sigma"]) * np.sqrt(np.clip(1.0 - decay ** 2, 1e-6, None))
+    # Day-1 noise floor (GW only — see the _NOISE_FLOOR_* block above): a
+    # per-station daily-innovation sd added in quadrature wherever the target
+    # is AFTER the origin (k > 0). The origin day itself is the observation —
+    # it stays exact. Self-fading: negligible once the AR1 band has grown.
+    if noise_floor and model_kind == "gw":
+        nf = min(_NOISE_FLOOR_K * daily_innovation_sigma(series, origin),
+                 _NOISE_FLOOR_CAP_M)
+        if nf > 0.0:
+            sig = np.sqrt(sig ** 2 + np.where(k > 0, nf, 0.0) ** 2)
     return mean, sig
 
 

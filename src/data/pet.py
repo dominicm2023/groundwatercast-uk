@@ -60,14 +60,29 @@ def et0_archive_daily(lat: float, lon: float,
         params["apikey"] = key
     url = _CUSTOMER_ARCHIVE if key else _FREE_ARCHIVE
 
+    r = None
+    last_exc: Exception | None = None
     for attempt, wait_s in enumerate((0,) + _RATE_LIMIT_WAITS_S):
         if wait_s:
-            print(f"    rate-limited (429) — waiting {wait_s}s before retry "
-                  f"{attempt}/{len(_RATE_LIMIT_WAITS_S)}")
+            print(f"    retrying in {wait_s}s "
+                  f"({attempt}/{len(_RATE_LIMIT_WAITS_S)})")
             time.sleep(wait_s)
-        r = requests.get(url, params=params, timeout=_TIMEOUT_S)
+        try:
+            r = requests.get(url, params=params, timeout=_TIMEOUT_S)
+        except requests.exceptions.RequestException as exc:
+            # Transient network failure (read timeout, handshake timeout,
+            # connection reset) — the 2026-07-17 outage class. Same backoff
+            # ladder as 429s.
+            last_exc = exc
+            r = None
+            print(f"    transient Open-Meteo error: {type(exc).__name__}")
+            continue
         if r.status_code != 429:
             break
+        print("    rate-limited (429)")
+    if r is None:
+        raise last_exc if last_exc is not None else RuntimeError(
+            "et0_archive_daily: no response and no exception")
     r.raise_for_status()
     d = r.json().get("daily", {})
     idx = pd.to_datetime(d.get("time", []))
@@ -116,14 +131,28 @@ def fetch_station_pet(station_id: str, lat: float, lon: float,
     if len(missing):
         # One contiguous request spanning the missing range is cheaper than
         # day-by-day; the archive returns the whole [min,max] window.
-        fetched = et0_archive_daily(lat, lon, missing.min().date(),
-                                    missing.max().date())
-        fetched.index = pd.to_datetime(fetched.index).tz_localize(None)
-        # Courtesy spacing between archive hits on the free tier — a fleet
-        # of back-to-back multi-year pulls trips the per-minute quota.
-        from src.forecast.ensemble.open_meteo import api_key
-        if not api_key():
-            time.sleep(1.0)
+        try:
+            fetched = et0_archive_daily(lat, lon, missing.min().date(),
+                                        missing.max().date())
+        except requests.exceptions.RequestException as exc:
+            # Archive unreachable after retries. A cache-backed caller gets the
+            # cached tail (a day-or-two-short PET series is harmless for the
+            # slow recharge kernels — the 2026-07-17 alternative was the whole
+            # daily publish dying on this exact exception). With NO cache there
+            # is nothing safe to serve — re-raise.
+            if cached.empty:
+                raise
+            print(f"  ! PET fetch failed for {station_id[:8]} "
+                  f"({type(exc).__name__}); serving cached tail "
+                  f"(ends {cached.index.max().date()}, {len(missing)} day(s) "
+                  f"short) — degraded, not fatal")
+        else:
+            fetched.index = pd.to_datetime(fetched.index).tz_localize(None)
+            # Courtesy spacing between archive hits on the free tier — a fleet
+            # of back-to-back multi-year pulls trips the per-minute quota.
+            from src.forecast.ensemble.open_meteo import api_key
+            if not api_key():
+                time.sleep(1.0)
 
     merged = pd.concat([cached, fetched])
     merged = merged[~merged.index.duplicated(keep="last")].sort_index()

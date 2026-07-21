@@ -69,6 +69,55 @@ def test_seeded_forecast_anchors_and_shapes(synthetic):
     assert sig[-1] >= sig[0]
 
 
+def test_noise_floor_lifts_day1_band_only(synthetic):
+    # The day-1 band floor (first-dry-run fix): with the floor, the anchor-day
+    # band must be at least the station's daily-innovation scale; by lead 14
+    # the AR1 band dominates and the floor adds almost nothing.
+    head, prec, evap = synthetic
+    rec = R.calibrate("BH1", head, prec, evap, train_max=pd.Timestamp("2021-12-31"))
+    origin = pd.Timestamp("2022-06-01")
+    window = pd.date_range(origin + pd.Timedelta(days=1), periods=14, freq="D")
+    _, sig_off = R.simulate_path(rec, head, prec, evap, origin, window,
+                                 noise_floor=False)
+    _, sig_on = R.simulate_path(rec, head, prec, evap, origin, window)
+    nf = min(R._NOISE_FLOOR_K * R.daily_innovation_sigma(head, origin),
+             R._NOISE_FLOOR_CAP_M)
+    assert nf > 0                                    # daily synthetic has noise
+    assert np.allclose(sig_on, np.sqrt(sig_off ** 2 + nf ** 2))
+    assert sig_on[0] >= nf                           # day 1: floor binds
+    # self-fading: relative widening shrinks monotonically-ish with lead
+    rel = sig_on / sig_off
+    assert rel[0] > rel[-1] >= 1.0
+
+
+def test_noise_floor_leaves_origin_day_exact(synthetic):
+    # A target ON the origin date is the observation itself — sigma stays as
+    # the AR1 math gives it (≈0), the floor must not widen it.
+    head, prec, evap = synthetic
+    rec = R.calibrate("BH1", head, prec, evap, train_max=pd.Timestamp("2021-12-31"))
+    origin = pd.Timestamp("2022-06-01")
+    targets = pd.DatetimeIndex([origin, origin + pd.Timedelta(days=1)])
+    _, sig = R.simulate_path(rec, head, prec, evap, origin, targets)
+    _, sig_off = R.simulate_path(rec, head, prec, evap, origin, targets,
+                                 noise_floor=False)
+    assert sig[0] == sig_off[0]                      # k=0 untouched
+    assert sig[1] > sig_off[1]                       # k=1 floored
+
+
+def test_noise_floor_skips_sparse_records(synthetic):
+    # A dipped (monthly) record has no consecutive-day pairs -> floor 0 ->
+    # bands identical with and without the flag.
+    head, prec, evap = synthetic
+    rec = R.calibrate("BH1", head, prec, evap, train_max=pd.Timestamp("2021-12-31"))
+    monthly = head.resample("MS").first().dropna()
+    origin = pd.Timestamp("2022-06-01")
+    window = pd.date_range(origin + pd.Timedelta(days=1), periods=14, freq="D")
+    _, sig_on = R.simulate_path(rec, monthly, prec, evap, origin, window)
+    _, sig_off = R.simulate_path(rec, monthly, prec, evap, origin, window,
+                                 noise_floor=False)
+    assert np.array_equal(sig_on, sig_off)
+
+
 def test_save_load_roundtrip(synthetic, tmp_path):
     head, prec, evap = synthetic
     rec = R.calibrate("BH1", head, prec, evap, train_max=pd.Timestamp("2021-12-31"))

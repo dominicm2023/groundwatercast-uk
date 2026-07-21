@@ -33,7 +33,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 _CATALOGUE = _ROOT / "data" / "processed" / "catalogue.csv"
 _SEL = "fc_selected"          # session-state key for the chosen borehole
 
-# Forecast tier → the map's colour schema (so build_map's popup is coherent).
+# Forecast tier → the map's risk-index schema (so build_map's popup is coherent).
 _TIER_RISK = {"BREACH_LIKELY": "HIGH", "BREACH_POSSIBLE": "MEDIUM",
               "WATCH": "MEDIUM", "STABLE": "LOW"}
 _TIER_ACTION = {"BREACH_LIKELY": "IMMEDIATE_ACTION", "BREACH_POSSIBLE": "EMERGING_RISK",
@@ -245,7 +245,7 @@ else:
                     st.session_state[_SEL] = str(hits.iloc[0])
         st.caption("Marker colour & size = forecast tier; hollow ring = stale seed "
                    f"(> {FRESH_SEED_MAX_DAYS} d, no live feed). Popups include the "
-                   "current forecast tier. Click a marker for its forecast detail.")
+                   "current risk-index band. Click a marker for its forecast detail.")
 
 # Shared detail panel (driven by table row or map marker). Gated to the current
 # filtered view so a selection that's been filtered out doesn't linger.

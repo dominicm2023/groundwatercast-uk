@@ -1,8 +1,8 @@
 """First verification dry-run (2026-07-18) — score archived operational fans.
 
 Scores every archived (station, run, lead) fan row whose valid date has an
-observation, split by calibration era (the 2026-07-04T12:00Z gauge-forcing
-recalibration boundary — cohorts are NEVER blended). The archive holds
+observation, split by calibration era per docs/phase3_verification_scope.md
+(era boundary 2026-07-04T12:00Z, cohorts NEVER blended). The archive holds
 quantiles only (P10/P50/P90), so the honest metric set is: interval coverage
 vs nominal 80%, tail asymmetry (below-P10 / above-P90), MAE(P50), mean
 pinball loss over the three quantiles, and band sharpness. This is a harness
@@ -21,15 +21,12 @@ on the VPS; build the extract there (one ssh) and scp it down — recipe:
          pack._read_shard) and left-merge on (station_id, date)
 
 Joins are calendar-date joins by construction — the positional-slicing hazard
-noted for run_hindcast (issue #5) cannot arise here.
+noted for run_hindcast (BUGS.md) cannot arise here.
 
     python -m scripts.score_fan_archive_dryrun <scored_input.parquet>
 
-First-run headline (2026-07-18, 82,746 scored rows / 459 stations / 34 runs):
-fleet P10–P90 coverage 0.80–0.85 vs nominal 0.80; the gauge-recalibration era
-is sharper AND more accurate; lead-1 bands are under-dispersed (coverage
-0.45–0.54 — the known band→0-at-anchor caveat, now quantified). Full
-verification engine tracked in issue #1; this dry-run supersedes nothing.
+Results of the first run are recorded in docs/phase3_verification_scope.md
+(§First dry-run). Supersedes nothing; the Phase-3 engine replaces this.
 """
 from __future__ import annotations
 

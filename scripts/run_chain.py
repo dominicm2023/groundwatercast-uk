@@ -37,7 +37,12 @@ Groups (step numbers in brackets):
     --all       everything above, in documented order
 
 Stages run with ``cwd`` = repo root, streaming output, and stop on the
-first failure (downstream stages are never run after a failure).
+first FATAL failure (downstream stages are never run after one). The
+RiverCast flow stages (0c, 8f-flow, 8h-flow, 9c) are NON-FATAL: if one
+fails mid-run (e.g. an upstream network outage), the chain logs it loudly,
+lets the flow products degrade to the previous run's, and carries on — a
+rivers failure must never block the groundwater publish. The exit code
+still reports the failure either way.
 Stdlib-only on purpose: this must run before any environment is rebuilt.
 """
 
@@ -135,6 +140,13 @@ class Stage:
     group: which selection flag pulls this stage in (core/xref/live/ensemble/pastas)
     env:   MAIN_ENV or PASTAS_ENV — which interpreter runs it
     why:   one-line reason this stage sits at this position in the order
+    fatal: whether a non-zero exit halts the chain (default). The RiverCast
+           flow stages are ``fatal=False``: rivers are the optional layer, so a
+           mid-run flow failure (e.g. an upstream PET/network outage) must
+           degrade the flow products — previous run's stay published — and NEVER
+           block the groundwater chain or the publish stages behind it
+           (2026-07-17 incident: 8h-flow died on an Open-Meteo timeout and the
+           whole daily publish was silently skipped).
     """
 
     name: str
@@ -143,6 +155,7 @@ class Stage:
     group: str
     env: str
     why: str
+    fatal: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +183,8 @@ STAGES = (
     Stage("build_flow_shards", "0c",
           ("-m", "scripts.build_flow_shards"), "ingest", MAIN_ENV,
           "top up raw flow archives + build/extend per-gauge Parquet shards "
-          "(data/features/flow_by_station/); needs flow_links.csv (Stage 1)"),
+          "(data/features/flow_by_station/); needs flow_links.csv (Stage 1)",
+          fatal=False),
 
     # -- core [steps 1-6]: full rebuild order any time joined_timeseries.csv changes
     Stage("v15_build_dipped_daily_series", "1",
@@ -244,7 +258,8 @@ STAGES = (
     Stage("build_flow_models", "8f-flow",
           ("-m", "scripts.build_flow_models"), "pastas", PASTAS_ENV,
           "calibrate per-gauge two-pathway flow models + Q95; needs "
-          "data/processed/flow_pilot.csv (Stage 5/6 selection); graceful-skips if absent"),
+          "data/processed/flow_pilot.csv (Stage 5/6 selection); graceful-skips if absent",
+          fatal=False),
     Stage("build_pastas_members", "8g",
           ("-m", "scripts.build_pastas_members"), "pastas", PASTAS_ENV,
           "drive models with ensemble member rainfall; run AFTER 8d (member rainfall) + 8f (models)"),
@@ -268,7 +283,8 @@ STAGES = (
           ("-m", "scripts.build_flow_members"), "pastas", PASTAS_ENV,
           "drive flow models with the 8d ENS bridge, Monte-Carlo aggregate + "
           "archive; run AFTER 8d (bridge) + 8f-flow (models); graceful-skips "
-          "if either is missing"),
+          "if either is missing",
+          fatal=False),
 
     # -- seasonal [steps 9, 9b]: monthly cadence (after SEAS5's update on the
     #    5th). Step 9 fetches/caches (main env); 9b is pure compute (pastas env).
@@ -293,7 +309,8 @@ STAGES = (
           ("-m", "scripts.build_flow_seasonal_shadow"), "seasonal", PASTAS_ENV,
           "shadow-mode flow seasonal archive (evidence only, publishes nothing); "
           "needs the flow pilot/models (8f-flow) + 9's ERA5/PET/SEAS5 caches; "
-          "run AFTER 9b (alongside the GW seasonal run); graceful-skips if absent"),
+          "run AFTER 9b (alongside the GW seasonal run); graceful-skips if absent",
+          fatal=False),
 
     # -- publish [step 10]: the versioned static pack (docs/artifact_contract.md).
     #    Pure read of existing artefacts — run LAST so it packages this run's
@@ -530,6 +547,18 @@ def main(argv=None):
         proc = subprocess.run(cmd, cwd=str(REPO_ROOT))
         elapsed = time.monotonic() - t0
         if proc.returncode != 0:
+            if not stage.fatal:
+                # RiverCast flow stage: degrade, don't halt. The previous run's
+                # flow products stay published (their own run/origin stamps make
+                # the staleness visible); the GW chain and the publish behind it
+                # proceed. Exit code still reports failure at the end.
+                results.append((stage, f"FAILED ({proc.returncode})", elapsed))
+                print(f"\nNON-FATAL stage {stage.name} failed (exit "
+                      f"{proc.returncode}) — continuing (rivers degrade; the "
+                      f"groundwater chain and publish are not blocked).",
+                      file=sys.stderr)
+                failed = True
+                continue
             results.append((stage, f"FAILED ({proc.returncode})", elapsed))
             print(f"\nFAILED at stage {stage.name} (exit {proc.returncode}) "
                   f"— downstream stages not run (stage {i} of {len(plan)} in the plan).",

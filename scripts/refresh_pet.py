@@ -26,6 +26,32 @@ from src.forecast.ensemble.scope import select_scope
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOGUE = ROOT / "data" / "processed" / "catalogue.csv"
+FLOW_PILOT = ROOT / "data" / "processed" / "flow_pilot.csv"
+FLOW_CATALOGUE = ROOT / "data" / "processed" / "flow_catalogue.csv"
+
+
+def _flow_pilot_points() -> dict:
+    """PET points for the published RiverCast pilot gauges.
+
+    The flow chain (build_flow_models / build_flow_members) reads the SAME
+    per-station PET cache via ``fetch_station_pet`` — covering the pilot
+    gauges here means the daily 8h-flow stage finds its tail already cached
+    (CDS-sourced) and never falls through to the live Open-Meteo archive
+    fetch that killed the 2026-07-17 publish. Empty dict when the low-flow
+    pilot isn't set up on this host (graceful, like the flow stages).
+    """
+    if not (FLOW_PILOT.exists() and FLOW_CATALOGUE.exists()):
+        return {}
+    try:
+        pilot = pd.read_csv(FLOW_PILOT, usecols=["gauge_id"])
+        cat = (pd.read_csv(FLOW_CATALOGUE)
+               .dropna(subset=["lat", "lon"]).drop_duplicates("station_id")
+               .set_index("station_id"))
+    except Exception as exc:
+        print(f"  (flow pilot PET points skipped: {exc})")
+        return {}
+    return {gid: (float(cat.loc[gid, "lat"]), float(cat.loc[gid, "lon"]))
+            for gid in pilot["gauge_id"].astype(str) if gid in cat.index}
 
 
 def _config_scope() -> str:
@@ -123,10 +149,16 @@ def main() -> int:
               for sid in ids if sid in cat.index and sid in has_gw}
     skipped = len(ids) - len(points)
 
+    # RiverCast pilot gauges ride the same CDS fetch/cache — see
+    # _flow_pilot_points. Distinct GUID namespaces, so no collision risk.
+    flow_points = _flow_pilot_points()
+    points.update(flow_points)
+
     floor = date.fromisoformat(str(cfg.get("download", {})
                                    .get("min_date", "2018-01-01")))
     end = date.today()
-    print(f"PET refresh — scope={args.scope}, {len(points)} boreholes, "
+    print(f"PET refresh — scope={args.scope}, {len(points) - len(flow_points)} "
+          f"boreholes + {len(flow_points)} flow gauges, "
           f"source={args.source}{' [FULL backfill]' if args.full else ''}")
 
     box_start = floor if args.full else _incremental_start(
